@@ -226,6 +226,7 @@
     <Compile Include="Model\DocumentHeaderLogModel.cs" />
     <Compile Include="Model\Model.cs" />
     <Compile Include="Model\PendingPurchaseOrder.cs" />
+    <Compile Include="Model\PendingQueueDocModel.cs" />
     <Compile Include="Model\PendingSalesOrder.cs" />
     <Compile Include="Model\SchedulerConfig.cs" />
     <Compile Include="Program.cs" />

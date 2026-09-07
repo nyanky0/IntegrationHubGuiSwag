@@ -43,6 +43,13 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.chkLogData = new System.Windows.Forms.CheckBox();
             this.label7 = new System.Windows.Forms.Label();
             this.chkAll1 = new System.Windows.Forms.CheckBox();
+            this.tabPending = new System.Windows.Forms.TabPage();
+            this.chkSelectAllPending = new System.Windows.Forms.CheckBox();
+            this.lblPendingFilterInfo = new System.Windows.Forms.Label();
+            this.txtSearchPending = new System.Windows.Forms.TextBox();
+            this.btnRefreshPending = new System.Windows.Forms.Button();
+            this.btnSyncSelected = new System.Windows.Forms.Button();
+            this.dgvPendingQueue = new System.Windows.Forms.DataGridView();
             this.tablog = new System.Windows.Forms.TabPage();
             this.txtSearchLog = new System.Windows.Forms.TextBox();
             this.btnExportExcel = new System.Windows.Forms.Button();
@@ -61,6 +68,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.tabsync.SuspendLayout();
             this.grpBox1.SuspendLayout();
             this.grpBox1_1.SuspendLayout();
+            this.tabPending.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.dgvPendingQueue)).BeginInit();
             this.tablog.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dgvlLogData)).BeginInit();
             this.SuspendLayout();
@@ -119,6 +128,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // tabControl1
             // 
             this.tabControl1.Controls.Add(this.tabsync);
+            this.tabControl1.Controls.Add(this.tabPending);
             this.tabControl1.Controls.Add(this.tablog);
             this.tabControl1.Location = new System.Drawing.Point(12, 76);
             this.tabControl1.Name = "tabControl1";
@@ -308,6 +318,87 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.chkAll1.UseVisualStyleBackColor = true;
             this.chkAll1.Visible = false;
             // 
+            // tabPending
+            // 
+            this.tabPending.Controls.Add(this.chkSelectAllPending);
+            this.tabPending.Controls.Add(this.lblPendingFilterInfo);
+            this.tabPending.Controls.Add(this.txtSearchPending);
+            this.tabPending.Controls.Add(this.btnRefreshPending);
+            this.tabPending.Controls.Add(this.btnSyncSelected);
+            this.tabPending.Controls.Add(this.dgvPendingQueue);
+            this.tabPending.Location = new System.Drawing.Point(4, 25);
+            this.tabPending.Name = "tabPending";
+            this.tabPending.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPending.Size = new System.Drawing.Size(893, 445);
+            this.tabPending.TabIndex = 1;
+            this.tabPending.Text = "Antrean Sync (Pending / Gagal)";
+            this.tabPending.UseVisualStyleBackColor = true;
+            // 
+            // chkSelectAllPending
+            // 
+            this.chkSelectAllPending.AutoSize = true;
+            this.chkSelectAllPending.Checked = true;
+            this.chkSelectAllPending.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkSelectAllPending.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.chkSelectAllPending.Location = new System.Drawing.Point(20, 18);
+            this.chkSelectAllPending.Name = "chkSelectAllPending";
+            this.chkSelectAllPending.Size = new System.Drawing.Size(108, 21);
+            this.chkSelectAllPending.TabIndex = 30;
+            this.chkSelectAllPending.Text = "Select All";
+            this.chkSelectAllPending.UseVisualStyleBackColor = true;
+            // 
+            // lblPendingFilterInfo
+            // 
+            this.lblPendingFilterInfo.AutoSize = true;
+            this.lblPendingFilterInfo.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblPendingFilterInfo.ForeColor = System.Drawing.Color.DarkSlateGray;
+            this.lblPendingFilterInfo.Location = new System.Drawing.Point(145, 19);
+            this.lblPendingFilterInfo.Name = "lblPendingFilterInfo";
+            this.lblPendingFilterInfo.Size = new System.Drawing.Size(400, 17);
+            this.lblPendingFilterInfo.TabIndex = 31;
+            this.lblPendingFilterInfo.Text = "Filter modul aktif: -";
+            // 
+            // txtSearchPending
+            // 
+            this.txtSearchPending.Location = new System.Drawing.Point(20, 48);
+            this.txtSearchPending.Name = "txtSearchPending";
+            this.txtSearchPending.Size = new System.Drawing.Size(236, 22);
+            this.txtSearchPending.TabIndex = 32;
+            // 
+            // btnRefreshPending
+            // 
+            this.btnRefreshPending.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.btnRefreshPending.Location = new System.Drawing.Point(263, 47);
+            this.btnRefreshPending.Name = "btnRefreshPending";
+            this.btnRefreshPending.Size = new System.Drawing.Size(150, 25);
+            this.btnRefreshPending.TabIndex = 33;
+            this.btnRefreshPending.Text = "Refresh Antrean";
+            this.btnRefreshPending.UseVisualStyleBackColor = true;
+            // 
+            // btnSyncSelected
+            // 
+            this.btnSyncSelected.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnSyncSelected.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.btnSyncSelected.ForeColor = System.Drawing.Color.DarkGreen;
+            this.btnSyncSelected.Location = new System.Drawing.Point(660, 46);
+            this.btnSyncSelected.Name = "btnSyncSelected";
+            this.btnSyncSelected.Size = new System.Drawing.Size(187, 26);
+            this.btnSyncSelected.TabIndex = 34;
+            this.btnSyncSelected.Text = "Sync Selected";
+            this.btnSyncSelected.UseVisualStyleBackColor = true;
+            // 
+            // dgvPendingQueue
+            // 
+            this.dgvPendingQueue.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.dgvPendingQueue.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            this.dgvPendingQueue.Location = new System.Drawing.Point(20, 77);
+            this.dgvPendingQueue.Name = "dgvPendingQueue";
+            this.dgvPendingQueue.RowHeadersWidth = 51;
+            this.dgvPendingQueue.Size = new System.Drawing.Size(827, 331);
+            this.dgvPendingQueue.TabIndex = 35;
+            // 
             // tablog
             // 
             this.tablog.Controls.Add(this.txtSearchLog);
@@ -325,7 +416,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.tablog.Name = "tablog";
             this.tablog.Padding = new System.Windows.Forms.Padding(3);
             this.tablog.Size = new System.Drawing.Size(893, 445);
-            this.tablog.TabIndex = 1;
+            this.tablog.TabIndex = 2;
             this.tablog.Text = "Log History";
             this.tablog.UseVisualStyleBackColor = true;
             // 
@@ -504,6 +595,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.grpBox1.PerformLayout();
             this.grpBox1_1.ResumeLayout(false);
             this.grpBox1_1.PerformLayout();
+            this.tabPending.ResumeLayout(false);
+            this.tabPending.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.dgvPendingQueue)).EndInit();
             this.tablog.ResumeLayout(false);
             this.tablog.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dgvlLogData)).EndInit();
@@ -522,7 +616,15 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
         private System.Windows.Forms.TabControl tabControl1;
         private System.Windows.Forms.TabPage tabsync;
+        private System.Windows.Forms.TabPage tabPending;
         private System.Windows.Forms.TabPage tablog;
+
+        internal System.Windows.Forms.CheckBox chkSelectAllPending;
+        private System.Windows.Forms.Label lblPendingFilterInfo;
+        internal System.Windows.Forms.TextBox txtSearchPending;
+        internal System.Windows.Forms.Button btnRefreshPending;
+        internal System.Windows.Forms.Button btnSyncSelected;
+        internal System.Windows.Forms.DataGridView dgvPendingQueue;
 
         internal System.Windows.Forms.TextBox txtSearchLog;
         internal System.Windows.Forms.Button btnExportExcel;

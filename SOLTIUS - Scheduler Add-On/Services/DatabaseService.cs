@@ -866,5 +866,289 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
             return lines;
         }
+
+        /// <summary>
+        /// Mengambil antrean dokumen yang belum tersinkronisasi ke SAP (Pending = 0 atau Failed = 2).
+        /// Filter modul aktif berdasarkan checkbox pada tab pertama (PO / SO / SL).
+        /// </summary>
+        public List<PendingQueueDocModel> LoadUnsyncedDocuments(bool includePO, bool includeSO, bool includeSL)
+        {
+            var list = new List<PendingQueueDocModel>();
+            if (string.IsNullOrEmpty(_connectionString)) return list;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    // 1. Purchase Orders (SOL_PURCHASE_ORDER_HEADER)
+                    if (includePO || includeSL)
+                    {
+                        try
+                        {
+                            string queryPO = @"
+                                SELECT SOL_ID AS HeaderId, 'Purchase Order' AS DocType,
+                                       ISNULL(SOL_WEB_TX_NUMBER, '') AS WebTxNumber,
+                                       ISNULL(SOL_CARDCODE, '') AS CardCode,
+                                       ISNULL(SOL_CARDNAME, '') AS CardName,
+                                       SOL_DOCDATE AS DocDate,
+                                       SOL_DOCDUEDATE AS DocDueDate,
+                                       SOL_PROCESS_STATUS AS ProcessStatus,
+                                       SOL_CREATED_AT AS CreatedAt,
+                                       ISNULL(SOL_REMARKS, '') AS Remarks,
+                                       ISNULL(SOL_ERRORMESSAGE, '') AS ErrorMessage,
+                                       SOL_UDF_DATA AS UdfDataJson
+                                FROM SOL_PURCHASE_ORDER_HEADER
+                                WHERE SOL_PROCESS_STATUS IN (0, 2)";
+
+                            using (SqlCommand cmd = new SqlCommand(queryPO, conn))
+                            using (SqlDataReader reader = cmd.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    int statusVal = Convert.IsDBNull(reader["ProcessStatus"]) ? 0 : Convert.ToInt32(reader["ProcessStatus"]);
+                                    string statusStr = statusVal == 0 ? "Pending" : "Failed";
+
+                                    list.Add(new PendingQueueDocModel
+                                    {
+                                        IsSelected = true,
+                                        HeaderId = Convert.ToInt64(reader["HeaderId"]),
+                                        DocType = reader["DocType"].ToString(),
+                                        WebTxNumber = reader["WebTxNumber"].ToString(),
+                                        CardCode = reader["CardCode"].ToString(),
+                                        CardName = reader["CardName"].ToString(),
+                                        DocDate = Convert.IsDBNull(reader["DocDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDate"]),
+                                        DocDueDate = Convert.IsDBNull(reader["DocDueDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDueDate"]),
+                                        ProcessStatus = statusVal,
+                                        Status = statusStr,
+                                        CreatedAt = Convert.IsDBNull(reader["CreatedAt"]) ? DateTime.MinValue : Convert.ToDateTime(reader["CreatedAt"]),
+                                        Remarks = reader["Remarks"].ToString(),
+                                        ErrorMessage = reader["ErrorMessage"].ToString(),
+                                        UdfDataJson = Convert.IsDBNull(reader["UdfDataJson"]) ? null : reader["UdfDataJson"].ToString()
+                                    });
+                                }
+                            }
+                        }
+                        catch (Exception exPO)
+                        {
+                            Console.WriteLine("LoadUnsyncedDocuments PO Error: " + exPO.Message);
+                        }
+                    }
+
+                    // 2. Sales Orders (sales_order_header)
+                    if (includeSO)
+                    {
+                        try
+                        {
+                            string querySO = @"
+                                SELECT id AS HeaderId, 'Sales Order' AS DocType,
+                                       '' AS WebTxNumber,
+                                       ISNULL(cardcode, '') AS CardCode,
+                                       ISNULL(cardname, '') AS CardName,
+                                       docdate AS DocDate,
+                                       docduedate AS DocDueDate,
+                                       process_status AS ProcessStatus,
+                                       created_at AS CreatedAt,
+                                       ISNULL(remarks, '') AS Remarks,
+                                       ISNULL(errormessage, '') AS ErrorMessage,
+                                       NULL AS UdfDataJson
+                                FROM sales_order_header
+                                WHERE process_status IN (0, 2)";
+
+                            using (SqlCommand cmd = new SqlCommand(querySO, conn))
+                            using (SqlDataReader reader = cmd.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    int statusVal = Convert.IsDBNull(reader["ProcessStatus"]) ? 0 : Convert.ToInt32(reader["ProcessStatus"]);
+                                    string statusStr = statusVal == 0 ? "Pending" : "Failed";
+
+                                    list.Add(new PendingQueueDocModel
+                                    {
+                                        IsSelected = true,
+                                        HeaderId = Convert.ToInt64(reader["HeaderId"]),
+                                        DocType = reader["DocType"].ToString(),
+                                        WebTxNumber = reader["WebTxNumber"].ToString(),
+                                        CardCode = reader["CardCode"].ToString(),
+                                        CardName = reader["CardName"].ToString(),
+                                        DocDate = Convert.IsDBNull(reader["DocDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDate"]),
+                                        DocDueDate = Convert.IsDBNull(reader["DocDueDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDueDate"]),
+                                        ProcessStatus = statusVal,
+                                        Status = statusStr,
+                                        CreatedAt = Convert.IsDBNull(reader["CreatedAt"]) ? DateTime.MinValue : Convert.ToDateTime(reader["CreatedAt"]),
+                                        Remarks = reader["Remarks"].ToString(),
+                                        ErrorMessage = reader["ErrorMessage"].ToString(),
+                                        UdfDataJson = Convert.IsDBNull(reader["UdfDataJson"]) ? null : reader["UdfDataJson"].ToString()
+                                    });
+                                }
+                            }
+                        }
+                        catch (Exception exSO)
+                        {
+                            Console.WriteLine("LoadUnsyncedDocuments SO Error: " + exSO.Message);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("LoadUnsyncedDocuments General Error: " + ex.Message);
+            }
+
+            list.Sort((a, b) => b.CreatedAt.CompareTo(a.CreatedAt));
+            return list;
+        }
+
+        public List<PendingPurchaseOrder> LoadPendingPurchaseOrdersByIds(IEnumerable<long> headerIds)
+        {
+            var result = new List<PendingPurchaseOrder>();
+            if (string.IsNullOrEmpty(_connectionString) || headerIds == null) return result;
+
+            var idList = new List<long>(headerIds);
+            if (idList.Count == 0) return result;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string idsJoined = string.Join(",", idList);
+
+                    string query = $@"
+                        SELECT h.SOL_ID AS HeaderId, h.SOL_CARDCODE AS CardCode, h.SOL_CARDNAME AS CardName,
+                               h.SOL_DOCDATE AS DocDate, h.SOL_DOCDUEDATE AS DocDueDate, h.SOL_TAXDATE AS TaxDate,
+                               h.SOL_REMARKS AS Remarks, h.SOL_WEB_TX_NUMBER AS WebTxNumber, h.SOL_WEB_TX_ID AS WebTxId,
+                               h.SOL_UDF_DATA AS HeaderUdfData,
+                               d.SOL_LINENUM AS LineNum, d.SOL_ITEMCODE AS ItemCode, d.SOL_ITEMNAME AS ItemName,
+                               d.SOL_WAREHOUSE AS Warehouse, d.SOL_QUANTITY AS Quantity, d.SOL_PRICE AS Price,
+                               d.SOL_VAT_GROUP AS VatGroup, d.SOL_WEB_LINE_ID AS WebLineId, d.SOL_UDF_DATA AS LineUdfData
+                        FROM SOL_PURCHASE_ORDER_HEADER h
+                        INNER JOIN SOL_PURCHASE_ORDER_DETAIL d ON d.SOL_HEADER_ID = h.SOL_ID
+                        WHERE h.SOL_ID IN ({idsJoined}) AND h.SOL_PROCESS_STATUS IN (0, 2)
+                        ORDER BY h.SOL_ID, d.SOL_LINENUM";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        PendingPurchaseOrder current = null;
+                        long currentHeaderId = -1;
+
+                        while (reader.Read())
+                        {
+                            long headerId = Convert.ToInt64(reader["HeaderId"]);
+
+                            if (current == null || headerId != currentHeaderId)
+                            {
+                                current = new PendingPurchaseOrder
+                                {
+                                    HeaderId = headerId,
+                                    CardCode = reader["CardCode"]?.ToString() ?? "",
+                                    CardName = reader["CardName"]?.ToString() ?? "",
+                                    DocDate = Convert.IsDBNull(reader["DocDate"]) ? DateTime.Now : Convert.ToDateTime(reader["DocDate"]),
+                                    DocDueDate = Convert.IsDBNull(reader["DocDueDate"]) ? DateTime.Now.AddDays(7) : Convert.ToDateTime(reader["DocDueDate"]),
+                                    TaxDate = Convert.IsDBNull(reader["TaxDate"]) ? DateTime.Now : Convert.ToDateTime(reader["TaxDate"]),
+                                    Remarks = reader["Remarks"]?.ToString() ?? "",
+                                    WebTxNumber = Convert.IsDBNull(reader["WebTxNumber"]) ? null : reader["WebTxNumber"].ToString(),
+                                    WebTxId = Convert.IsDBNull(reader["WebTxId"]) ? (long?)null : Convert.ToInt64(reader["WebTxId"]),
+                                    UdfDataJson = Convert.IsDBNull(reader["HeaderUdfData"]) ? null : reader["HeaderUdfData"].ToString()
+                                };
+                                result.Add(current);
+                                currentHeaderId = headerId;
+                            }
+
+                            current.Lines.Add(new PendingPurchaseOrderLine
+                            {
+                                LineNum = Convert.IsDBNull(reader["LineNum"]) ? 0 : Convert.ToInt32(reader["LineNum"]),
+                                ItemCode = reader["ItemCode"]?.ToString() ?? "",
+                                ItemName = reader["ItemName"]?.ToString() ?? "",
+                                Warehouse = reader["Warehouse"]?.ToString() ?? "",
+                                Quantity = Convert.IsDBNull(reader["Quantity"]) ? 0 : Convert.ToDecimal(reader["Quantity"]),
+                                Price = Convert.IsDBNull(reader["Price"]) ? 0 : Convert.ToDecimal(reader["Price"]),
+                                VatGroup = Convert.IsDBNull(reader["VatGroup"]) ? null : reader["VatGroup"].ToString(),
+                                WebLineId = Convert.IsDBNull(reader["WebLineId"]) ? (long?)null : Convert.ToInt64(reader["WebLineId"]),
+                                UdfDataJson = Convert.IsDBNull(reader["LineUdfData"]) ? null : reader["LineUdfData"].ToString()
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Gagal memuat Purchase Order terpilih dari staging.", ex);
+            }
+
+            return result;
+        }
+
+        public List<PendingSalesOrder> LoadPendingSalesOrdersByIds(IEnumerable<long> headerIds)
+        {
+            var result = new List<PendingSalesOrder>();
+            if (string.IsNullOrEmpty(_connectionString) || headerIds == null) return result;
+
+            var idList = new List<long>(headerIds);
+            if (idList.Count == 0) return result;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string idsJoined = string.Join(",", idList);
+
+                    string query = $@"
+                        SELECT h.id AS HeaderId, h.cardcode, h.cardname, h.docdate, h.docduedate, h.taxdate, h.remarks,
+                               d.linenum, d.itemcode, d.itemname, d.warehouse, d.quantity, d.price
+                        FROM sales_order_header h
+                        INNER JOIN sales_order_detail d ON d.header_id = h.id
+                        WHERE h.id IN ({idsJoined}) AND h.process_status IN (0, 2)
+                        ORDER BY h.id, d.linenum";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        PendingSalesOrder current = null;
+                        long currentHeaderId = -1;
+
+                        while (reader.Read())
+                        {
+                            long headerId = Convert.ToInt64(reader["HeaderId"]);
+
+                            if (current == null || headerId != currentHeaderId)
+                            {
+                                current = new PendingSalesOrder
+                                {
+                                    HeaderId = headerId,
+                                    CardCode = reader["cardcode"]?.ToString() ?? "",
+                                    CardName = reader["cardname"]?.ToString() ?? "",
+                                    DocDate = Convert.IsDBNull(reader["docdate"]) ? DateTime.Now : Convert.ToDateTime(reader["docdate"]),
+                                    DocDueDate = Convert.IsDBNull(reader["docduedate"]) ? DateTime.Now.AddDays(7) : Convert.ToDateTime(reader["docduedate"]),
+                                    TaxDate = Convert.IsDBNull(reader["taxdate"]) ? DateTime.Now : Convert.ToDateTime(reader["taxdate"]),
+                                    Remarks = reader["remarks"]?.ToString() ?? ""
+                                };
+                                result.Add(current);
+                                currentHeaderId = headerId;
+                            }
+
+                            current.Lines.Add(new PendingSalesOrderLine
+                            {
+                                LineNum = Convert.IsDBNull(reader["linenum"]) ? 0 : Convert.ToInt32(reader["linenum"]),
+                                ItemCode = reader["itemcode"]?.ToString() ?? "",
+                                ItemName = reader["itemname"]?.ToString() ?? "",
+                                Warehouse = reader["warehouse"]?.ToString() ?? "",
+                                Quantity = Convert.IsDBNull(reader["quantity"]) ? 0 : Convert.ToDecimal(reader["quantity"]),
+                                Price = Convert.IsDBNull(reader["price"]) ? 0 : Convert.ToDecimal(reader["price"])
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Gagal memuat Sales Order terpilih dari staging.", ex);
+            }
+
+            return result;
+        }
     }
 }

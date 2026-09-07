@@ -16,6 +16,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
     public partial class FormMain : Form
     {
         private List<DocumentHeaderLogModel> masterLogList;
+        private List<PendingQueueDocModel> masterPendingList;
         private readonly ConfigService _configService;
 
         // Fallback URL Web API (dipakai bila profil tidak memiliki 'Web API URL').
@@ -23,13 +24,14 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private readonly string webEndpointUrl = "http://localhost:5006";
 
         public FormMain()
-                {
-                    InitializeComponent();
+        {
+            InitializeComponent();
 
-                    UITheme.ApplyForm(this); // StartPosition diproses saat CreateHandle — harus sebelum Show()
+            UITheme.ApplyForm(this); // StartPosition diproses saat CreateHandle — harus sebelum Show()
 
-                    _configService = new ConfigService();
+            _configService = new ConfigService();
             masterLogList = new List<DocumentHeaderLogModel>();
+            masterPendingList = new List<PendingQueueDocModel>();
 
             SetupUI();
             WireEvents();
@@ -46,7 +48,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             cbFunction.SelectedIndex = 0;
 
             SetupLogGridColumns();
+            SetupPendingGridColumns();
             RefreshGrid();
+            RefreshPendingGrid();
         }
 
         private void SetupLogGridColumns()
@@ -132,6 +136,98 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             });
         }
 
+        private void SetupPendingGridColumns()
+        {
+            dgvPendingQueue.AutoGenerateColumns = false;
+            dgvPendingQueue.Columns.Clear();
+            dgvPendingQueue.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dgvPendingQueue.MultiSelect = false;
+
+            dgvPendingQueue.Columns.Add(new DataGridViewCheckBoxColumn
+            {
+                Name = "colSelectPending",
+                HeaderText = "Pilih",
+                DataPropertyName = "IsSelected",
+                Width = 45,
+                ReadOnly = false
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colDocTypePending",
+                HeaderText = "Doc Type",
+                DataPropertyName = "DocType",
+                Width = 110,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colWebTxPending",
+                HeaderText = "Web Tx Number",
+                DataPropertyName = "WebTxNumber",
+                Width = 140,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colCardCodePending",
+                HeaderText = "BP Code",
+                DataPropertyName = "CardCode",
+                Width = 90,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colCardNamePending",
+                HeaderText = "BP Name",
+                DataPropertyName = "CardName",
+                Width = 160,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colDocDatePending",
+                HeaderText = "Doc Date",
+                DataPropertyName = "DocDate",
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+                Width = 90,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colDocDueDatePending",
+                HeaderText = "Due Date",
+                DataPropertyName = "DocDueDate",
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+                Width = 90,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colStatusPending",
+                HeaderText = "Status",
+                DataPropertyName = "Status",
+                Width = 80,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colErrorPending",
+                HeaderText = "Keterangan / Error Terakhir",
+                DataPropertyName = "ErrorMessage",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                ReadOnly = true
+            });
+            dgvPendingQueue.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colCreatedAtPending",
+                HeaderText = "Created At",
+                DataPropertyName = "CreatedAt",
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm:ss" },
+                Width = 130,
+                ReadOnly = true
+            });
+        }
+
         private void WireEvents()
         {
             this.Load += (s, e) => UpdateActiveProfileLabel();
@@ -162,6 +258,22 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             if (dgvlLogData != null) this.dgvlLogData.CellDoubleClick += dgvlLogData_CellDoubleClick;
             if (exportProfilesToolStripMenuItem != null) this.exportProfilesToolStripMenuItem.Click += ExportProfiles_Click;
             if (importProfilesToolStripMenuItem != null) this.importProfilesToolStripMenuItem.Click += ImportProfiles_Click;
+
+            // Checkbox modul di Tab 1 mengubah isi antrean dokumen di Tab 2
+            if (chkSO != null) this.chkSO.CheckedChanged += (s, e) => RefreshPendingGrid();
+            if (chkPO != null) this.chkPO.CheckedChanged += (s, e) => RefreshPendingGrid();
+            if (chkSL != null) this.chkSL.CheckedChanged += (s, e) => RefreshPendingGrid();
+
+            // Kontrol di Tab Antrean Pending
+            if (chkSelectAllPending != null) this.chkSelectAllPending.CheckedChanged += chkSelectAllPending_CheckedChanged;
+            if (btnRefreshPending != null) this.btnRefreshPending.Click += (s, e) => RefreshPendingGrid();
+            if (txtSearchPending != null) this.txtSearchPending.TextChanged += (s, e) => ApplyPendingFilter();
+            if (btnSyncSelected != null) this.btnSyncSelected.Click += btnSyncSelected_Click;
+            if (dgvPendingQueue != null)
+            {
+                this.dgvPendingQueue.CellDoubleClick += dgvPendingQueue_CellDoubleClick;
+                this.dgvPendingQueue.CellFormatting += dgvPendingQueue_CellFormatting;
+            }
         }
 
         #region PROFILE & DATABASE HELPERS
@@ -272,7 +384,251 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         {
             if (tabControl1.SelectedTab == tablog)
                 LoadLogFromDatabase();
+            else if (tabControl1.SelectedTab == tabPending)
+                RefreshPendingGrid();
         }
+
+        #region PENDING / RETRY QUEUE ACTIONS
+        private void RefreshPendingGrid()
+        {
+            var dbService = GetDatabaseService();
+            if (dbService == null)
+            {
+                masterPendingList = new List<PendingQueueDocModel>();
+                ApplyPendingFilter();
+                return;
+            }
+
+            bool includeSO = chkSO?.Checked ?? false;
+            bool includePO = chkPO?.Checked ?? false;
+            bool includeSL = chkSL?.Checked ?? false;
+
+            // Update label filter info
+            var activeModules = new List<string>();
+            if (includePO) activeModules.Add("Purchase Order");
+            if (includeSO) activeModules.Add("Sales Order");
+            if (includeSL) activeModules.Add("Service Layer");
+
+            if (lblPendingFilterInfo != null)
+            {
+                if (activeModules.Count > 0)
+                {
+                    lblPendingFilterInfo.Text = "Filter Modul Aktif dari Tab 1: " + string.Join(", ", activeModules);
+                    lblPendingFilterInfo.ForeColor = Color.DarkSlateGray;
+                }
+                else
+                {
+                    lblPendingFilterInfo.Text = "Belum ada modul dipilih pada Tab 1 (Centang Sales Order / Purchase Order / Service Layer).";
+                    lblPendingFilterInfo.ForeColor = Color.DarkRed;
+                }
+            }
+
+            if (!includeSO && !includePO && !includeSL)
+            {
+                masterPendingList = new List<PendingQueueDocModel>();
+            }
+            else
+            {
+                try
+                {
+                    masterPendingList = dbService.LoadUnsyncedDocuments(includePO, includeSO, includeSL);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error load unsynced: " + ex.Message);
+                    masterPendingList = new List<PendingQueueDocModel>();
+                }
+            }
+
+            ApplyPendingFilter();
+        }
+
+        private void ApplyPendingFilter()
+        {
+            if (masterPendingList == null) masterPendingList = new List<PendingQueueDocModel>();
+
+            string searchKeyword = txtSearchPending?.Text.Trim().ToLower() ?? "";
+
+            var filteredList = masterPendingList.Where(x =>
+                string.IsNullOrEmpty(searchKeyword) ||
+                (!string.IsNullOrEmpty(x.WebTxNumber) && x.WebTxNumber.ToLower().Contains(searchKeyword)) ||
+                (!string.IsNullOrEmpty(x.CardCode) && x.CardCode.ToLower().Contains(searchKeyword)) ||
+                (!string.IsNullOrEmpty(x.CardName) && x.CardName.ToLower().Contains(searchKeyword)) ||
+                (!string.IsNullOrEmpty(x.DocType) && x.DocType.ToLower().Contains(searchKeyword)) ||
+                (!string.IsNullOrEmpty(x.Status) && x.Status.ToLower().Contains(searchKeyword)) ||
+                (!string.IsNullOrEmpty(x.ErrorMessage) && x.ErrorMessage.ToLower().Contains(searchKeyword))
+            ).ToList();
+
+            dgvPendingQueue.DataSource = new BindingList<PendingQueueDocModel>(filteredList);
+            dgvPendingQueue.Refresh();
+        }
+
+        private void chkSelectAllPending_CheckedChanged(object sender, EventArgs e)
+        {
+            if (masterPendingList == null) return;
+            bool isChecked = chkSelectAllPending.Checked;
+            foreach (var item in masterPendingList)
+            {
+                item.IsSelected = isChecked;
+            }
+            dgvPendingQueue.Refresh();
+        }
+
+        private void dgvPendingQueue_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= dgvPendingQueue.Rows.Count) return;
+
+            var selectedItem = dgvPendingQueue.Rows[e.RowIndex].DataBoundItem as PendingQueueDocModel;
+            if (selectedItem == null) return;
+
+            var dbService = GetDatabaseService();
+            if (dbService == null) return;
+
+            var headerLog = new DocumentHeaderLogModel
+            {
+                HeaderId = selectedItem.HeaderId,
+                DocType = selectedItem.DocType,
+                WebTxNumber = selectedItem.WebTxNumber,
+                CardCode = selectedItem.CardCode,
+                CardName = selectedItem.CardName,
+                DocDate = selectedItem.DocDate,
+                DocDueDate = selectedItem.DocDueDate,
+                Status = selectedItem.Status,
+                DocEntry = "-",
+                CreatedAt = selectedItem.CreatedAt,
+                Remarks = selectedItem.Remarks,
+                ErrorMessage = selectedItem.ErrorMessage,
+                UdfDataJson = selectedItem.UdfDataJson
+            };
+
+            using (var frmDetail = new FormDocumentDetail(headerLog, dbService))
+            {
+                frmDetail.ShowDialog(this);
+            }
+        }
+
+        private void dgvPendingQueue_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= dgvPendingQueue.Rows.Count) return;
+
+            var item = dgvPendingQueue.Rows[e.RowIndex].DataBoundItem as PendingQueueDocModel;
+            if (item == null) return;
+
+            if (item.Status == "Failed")
+            {
+                dgvPendingQueue.Rows[e.RowIndex].DefaultCellStyle.ForeColor = Color.DarkRed;
+                dgvPendingQueue.Rows[e.RowIndex].DefaultCellStyle.SelectionForeColor = Color.Yellow;
+            }
+            else if (item.Status == "Pending")
+            {
+                dgvPendingQueue.Rows[e.RowIndex].DefaultCellStyle.ForeColor = Color.DarkOrange;
+                dgvPendingQueue.Rows[e.RowIndex].DefaultCellStyle.SelectionForeColor = Color.White;
+            }
+        }
+
+        private async void btnSyncSelected_Click(object sender, EventArgs e)
+        {
+            AppConfig activeConfig = _configService.GetActiveConfiguration();
+            if (activeConfig == null)
+            {
+                MessageBox.Show("Profil aktif tidak ditemukan.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            dgvPendingQueue.EndEdit();
+
+            var selectedItems = masterPendingList?.Where(x => x.IsSelected).ToList();
+            if (selectedItems == null || selectedItems.Count == 0)
+            {
+                MessageBox.Show("Pilih minimal satu dokumen dari antrean untuk disinkronisasi.", "Peringatan", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var confirmResult = MessageBox.Show(
+                $"Apakah Anda yakin ingin menyinkronkan {selectedItems.Count} dokumen terpilih ke SAP?",
+                "Konfirmasi Sync Terpilih",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (confirmResult != DialogResult.Yes) return;
+
+            SetUIState(false);
+
+            var dbService = GetDatabaseService();
+            if (dbService == null)
+            {
+                SetUIState(true);
+                return;
+            }
+
+            var poIds = selectedItems.Where(x => x.DocType == "Purchase Order").Select(x => x.HeaderId).ToList();
+            var soIds = selectedItems.Where(x => x.DocType == "Sales Order").Select(x => x.HeaderId).ToList();
+
+            var pendingPurchaseOrders = new List<PendingPurchaseOrder>();
+            if (poIds.Count > 0)
+            {
+                try
+                {
+                    pendingPurchaseOrders = dbService.LoadPendingPurchaseOrdersByIds(poIds);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Gagal memuat detail Purchase Order terpilih: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    SetUIState(true);
+                    return;
+                }
+            }
+
+            var pendingOrders = new List<PendingSalesOrder>();
+            if (soIds.Count > 0)
+            {
+                try
+                {
+                    pendingOrders = dbService.LoadPendingSalesOrdersByIds(soIds);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Gagal memuat detail Sales Order terpilih: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    SetUIState(true);
+                    return;
+                }
+            }
+
+            int totalDocCount = pendingOrders.Count + pendingPurchaseOrders.Count;
+            if (totalDocCount == 0)
+            {
+                MessageBox.Show("Tidak ada dokumen yang valid untuk disinkronisasi.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SetUIState(true);
+                return;
+            }
+
+            bool isDryRun = chkDryRun?.Checked ?? false;
+            var progress = new Progress<int>(percent => pBar.Value = percent);
+            int failedCount = 0;
+
+            try
+            {
+                failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingOrders, pendingPurchaseOrders, isDryRun, progress));
+
+                RefreshPendingGrid();
+                LoadLogFromDatabase();
+
+                string modeSuffix = isDryRun ? " (Mode Simulasi)" : "";
+                if (failedCount > 0)
+                    MessageBox.Show($"Sync Selesai{modeSuffix}!\nBerhasil: {totalDocCount - failedCount} dokumen.\nGagal: {failedCount} dokumen.", "Hasil Sinkronisasi", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                else
+                    MessageBox.Show($"Sinkronisasi Berhasil Sepenuhnya{modeSuffix}!\nSemua {totalDocCount} dokumen terpilih berhasil disinkronisasi ke SAP.", "Sukses", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Sync Error: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                SetUIState(true);
+            }
+        }
+        #endregion
         #endregion
 
         #region BUTTON SYNC LOGIC (PARALLEL & DRY RUN)
@@ -387,6 +743,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingOrders, pendingPurchaseOrders, isDryRun, progress));
 
                 LoadLogFromDatabase();
+                RefreshPendingGrid();
                 string modeSuffix = isDryRun ? " (Mode Simulasi)" : "";
 
                 if (failedCount > 0)
@@ -882,7 +1239,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private void SetUIState(bool isEnabled)
         {
             btnSync.Enabled = isEnabled;
-            // btnRetryFailed.Enabled = isEnabled; // Uncomment jika menggunakan retry
+            if (btnSyncSelected != null) btnSyncSelected.Enabled = isEnabled;
+            if (btnRefreshPending != null) btnRefreshPending.Enabled = isEnabled;
             if (isEnabled) pBar.Value = 0;
         }
 
@@ -912,6 +1270,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             UITheme.ApplySecondary(btnViewLog);
             UITheme.ApplySecondary(btnRetryFailed);
 
+            UITheme.ApplyPrimary(btnSyncSelected);
+            UITheme.ApplySecondary(btnRefreshPending);
+            UITheme.ApplyGrid(dgvPendingQueue);
+            UITheme.ApplyTextBox(txtSearchPending);
+            UITheme.ApplyCheck(chkSelectAllPending);
+
             UITheme.ApplyGrid(dgvlLogData);
             UITheme.ApplyProgress(pBar);
             UITheme.ApplyGroup(grpBox1);
@@ -923,6 +1287,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             UITheme.ApplyCheck(chkDryRun);
             UITheme.ApplyCheck(chkSO);
+            UITheme.ApplyCheck(chkPO);
             UITheme.ApplyCheck(chkSL);
             UITheme.ApplyCheck(chkLogData);
             UITheme.ApplyCheck(chkAll1);

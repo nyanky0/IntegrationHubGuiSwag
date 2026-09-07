@@ -71,12 +71,15 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                 oOrder.DocDueDate = DateTime.Now.AddDays(7);
                 oOrder.Comments = "Sync via SOLTIUS Scheduler";
 
-                // Gunakan variabel eksplisit, jangan di-chain (oOrder.Lines.xxx)
                 oLines = oOrder.Lines;
                 oLines.ItemCode = task.ItemCode;
                 oLines.Quantity = task.Quantity;
                 oLines.Price = task.Price;
-                oLines.WarehouseCode = task.WarehouseCode;
+                string resolvedWhs = ResolveWarehouse(task.WarehouseCode);
+                if (!string.IsNullOrEmpty(resolvedWhs))
+                {
+                    try { oLines.WarehouseCode = resolvedWhs; } catch { }
+                }
 
                 int addResult = oOrder.Add();
                 if (addResult != 0)
@@ -156,8 +159,11 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     oLines.ItemCode = line.ItemCode;
                     oLines.Quantity = (double)line.Quantity;
                     oLines.Price = (double)line.Price;
-                    if (!string.IsNullOrEmpty(line.Warehouse))
-                        oLines.WarehouseCode = line.Warehouse;
+                    string resolvedWhs = ResolveWarehouse(line.Warehouse);
+                    if (!string.IsNullOrEmpty(resolvedWhs))
+                    {
+                        try { oLines.WarehouseCode = resolvedWhs; } catch { }
+                    }
                     oLines.Add();
                 }
 
@@ -205,7 +211,11 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                 oLines.ItemCode = task.ItemCode;
                 oLines.Quantity = task.Quantity;
                 oLines.Price = task.Price;
-                oLines.WarehouseCode = task.WarehouseCode;
+                string resolvedWhs = ResolveWarehouse(task.WarehouseCode);
+                if (!string.IsNullOrEmpty(resolvedWhs))
+                {
+                    try { oLines.WarehouseCode = resolvedWhs; } catch { }
+                }
 
                 int addResult = oOrder.Add();
                 if (addResult != 0)
@@ -293,10 +303,17 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     oLines.ItemCode = line.ItemCode;
                     oLines.Quantity = (double)line.Quantity;
                     oLines.Price = (double)line.Price;
-                    if (!string.IsNullOrEmpty(line.Warehouse))
-                        oLines.WarehouseCode = line.Warehouse;
-                    if (!string.IsNullOrEmpty(line.VatGroup))
-                        oLines.VatGroup = line.VatGroup;
+                    string resolvedWhs = ResolveWarehouse(line.Warehouse);
+                    if (!string.IsNullOrEmpty(resolvedWhs))
+                    {
+                        try { oLines.WarehouseCode = resolvedWhs; } catch { }
+                    }
+
+                    string resolvedVat = ResolvePurchaseVatGroup(line.VatGroup);
+                    if (!string.IsNullOrEmpty(resolvedVat))
+                    {
+                        try { oLines.VatGroup = resolvedVat; } catch { }
+                    }
 
                     if (line.WebLineId.HasValue)
                         TrySetUserField(oLines.UserFields, "U_SOL_WebLineId", line.WebLineId.Value);
@@ -368,6 +385,125 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             {
                 // Abaikan kesalahan deserialisasi JSON jika data tidak sesuai
             }
+        }
+
+        private HashSet<string> _validWarehouses;
+        private HashSet<string> _validInputTaxCodes;
+        private HashSet<string> _validOutputTaxCodes;
+
+        private void EnsureMasterDataCache()
+        {
+            if (_validWarehouses != null) return;
+            _validWarehouses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _validInputTaxCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _validOutputTaxCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (_oCompany == null || !_oCompany.Connected) return;
+
+            Recordset rs = null;
+            try
+            {
+                rs = (Recordset)_oCompany.GetBusinessObject(BoObjectTypes.BoRecordset);
+                rs.DoQuery("SELECT WhsCode FROM OWHS");
+                while (!rs.EoF)
+                {
+                    var val = rs.Fields.Item(0).Value?.ToString()?.Trim();
+                    if (!string.IsNullOrEmpty(val)) _validWarehouses.Add(val);
+                    rs.MoveNext();
+                }
+
+                rs.DoQuery("SELECT Code, Category FROM OVTG");
+                while (!rs.EoF)
+                {
+                    var code = rs.Fields.Item(0).Value?.ToString()?.Trim();
+                    var cat = rs.Fields.Item(1).Value?.ToString()?.Trim();
+                    if (!string.IsNullOrEmpty(code))
+                    {
+                        if (string.Equals(cat, "I", StringComparison.OrdinalIgnoreCase))
+                            _validInputTaxCodes.Add(code);
+                        else if (string.Equals(cat, "O", StringComparison.OrdinalIgnoreCase))
+                            _validOutputTaxCodes.Add(code);
+                    }
+                    rs.MoveNext();
+                }
+            }
+            catch
+            {
+                // Fallback jika query master data gagal
+            }
+            finally
+            {
+                if (rs != null)
+                {
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(rs);
+                }
+            }
+        }
+
+        private string ResolveWarehouse(string inputWarehouse)
+        {
+            if (string.IsNullOrWhiteSpace(inputWarehouse)) return null;
+
+            string whs = inputWarehouse.Trim();
+            if (whs.Equals("WHS-D1", StringComparison.OrdinalIgnoreCase)) whs = "WH-D1";
+
+            EnsureMasterDataCache();
+
+            if (_validWarehouses != null && _validWarehouses.Count > 0)
+            {
+                if (_validWarehouses.Contains(whs)) return whs;
+                if (_validWarehouses.Contains("DC")) return "DC";
+                if (_validWarehouses.Contains("WH-D1")) return "WH-D1";
+                return null;
+            }
+
+            return whs;
+        }
+
+        private string ResolvePurchaseVatGroup(string inputVat)
+        {
+            if (string.IsNullOrWhiteSpace(inputVat)) return null;
+
+            string vat = inputVat.Trim();
+            if (vat.Equals("PPN11", StringComparison.OrdinalIgnoreCase) ||
+                vat.Equals("PPN", StringComparison.OrdinalIgnoreCase) ||
+                vat.Equals("11%", StringComparison.OrdinalIgnoreCase))
+            {
+                vat = "PPNM";
+            }
+
+            EnsureMasterDataCache();
+
+            if (_validInputTaxCodes != null && _validInputTaxCodes.Count > 0)
+            {
+                if (_validInputTaxCodes.Contains(vat)) return vat;
+                return null;
+            }
+
+            return vat;
+        }
+
+        private string ResolveSalesVatGroup(string inputVat)
+        {
+            if (string.IsNullOrWhiteSpace(inputVat)) return null;
+
+            string vat = inputVat.Trim();
+            if (vat.Equals("PPN11", StringComparison.OrdinalIgnoreCase) ||
+                vat.Equals("PPN", StringComparison.OrdinalIgnoreCase) ||
+                vat.Equals("11%", StringComparison.OrdinalIgnoreCase))
+            {
+                vat = "PPNK";
+            }
+
+            EnsureMasterDataCache();
+
+            if (_validOutputTaxCodes != null && _validOutputTaxCodes.Count > 0)
+            {
+                if (_validOutputTaxCodes.Contains(vat)) return vat;
+                return null;
+            }
+
+            return vat;
         }
 
         public void Dispose()
