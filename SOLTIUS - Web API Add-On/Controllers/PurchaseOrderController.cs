@@ -123,6 +123,7 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
                     0 => "Sync to Hub (Pending SAP)",
                     1 => "Sync to SAP (Success)",
                     2 => "Failed",
+                    3 => "Cancelled",
                     _ => "Unknown"
                 },
                 isPostedToSap = isPosted,
@@ -131,7 +132,7 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
                 errorMessage = existing.ErrorMessage,
                 message = isPosted
                     ? $"Dokumen sudah ter posting ke SAP dengan nomor SAP {existing.DocEntry}"
-                    : (existing.ProcessStatus == 0 ? "Dokumen berada di antrean Hub" : existing.ErrorMessage)
+                    : (existing.ProcessStatus == 0 ? "Dokumen berada di antrean Hub" : (existing.ProcessStatus == 3 ? "Dokumen dibatalkan (Cancelled)" : existing.ErrorMessage))
             });
         }
 
