@@ -24,6 +24,9 @@ namespace SOLTIUS_Scheduler_Add_On.Model
         /// <summary>Jalankan sinkronisasi Sales Order (ORDR).</summary>
         public bool SyncSalesOrder { get; set; } = true;
 
+        /// <summary>Jalankan sinkronisasi Purchase Order (OPOR).</summary>
+        public bool SyncPurchaseOrder { get; set; } = true;
+
         /// <summary>Jalankan sinkronisasi Service Layer. (Belum diimplementasi di engine.)</summary>
         public bool SyncServiceLayer { get; set; } = false;
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic; // Diperlukan untuk List
 using System.IO;
 using System.Linq; // Diperlukan untuk mengecek duplikat profil
@@ -13,11 +13,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private string configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AllConfigurations.xml");
 
         public FormCreate()
-                {
-                    InitializeComponent();
-                    UITheme.ApplyForm(this); // center screen — StartPosition harus di-set sebelum Show
-                    this.button2.Click += new System.EventHandler(this.button2_Click);
-                }
+        {
+            InitializeComponent();
+            UITheme.ApplyForm(this); // center screen — StartPosition harus di-set sebelum Show
+            this.button2.Click -= this.button2_Click;
+            this.button2.Click += this.button2_Click;
+        }
 
         private void FormCreate_Load(object sender, EventArgs e)
         {

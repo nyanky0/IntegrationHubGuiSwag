@@ -1,4 +1,4 @@
-﻿using SOLTIUS_Web_API_Add_On.Database.Interfaces;
+using SOLTIUS_Web_API_Add_On.Database.Interfaces;
 using SOLTIUS_Web_API_Add_On.Exceptions;
 using SOLTIUS_Web_API_Add_On.Models.Configuration;
 using System.Xml.Linq;
@@ -28,7 +28,11 @@ namespace SOLTIUS_Web_API_Add_On.Services.Configuration
                 throw new ApiNotConfiguredException();
 
             XDocument doc = XDocument.Load(_configPath);
+            return ParseDatabaseConfig(doc);
+        }
 
+        private DBConfig ParseDatabaseConfig(XDocument doc)
+        {
             XElement? database = doc.Root?.Element("ExternalDatabase");
             if (database == null)
                 throw new InvalidOperationException("External database configuration is missing.");
@@ -52,14 +56,14 @@ namespace SOLTIUS_Web_API_Add_On.Services.Configuration
 
         public async Task ConfigureAsync(string xml)
         {
-            // Validate XML first (throws if invalid)
-            XDocument.Parse(xml);
+            // Validate & parse XML payload directly
+            XDocument doc = XDocument.Parse(xml);
 
-            DBConfig config = GetDatabaseConfig();
+            DBConfig config = ParseDatabaseConfig(doc);
             IDatabaseInitializer initializer = _factory.Create(config);
             await initializer.InitializeAsync(config);
 
-            // Single write (fix: was writing twice before)
+            // Single write to disk
             await File.WriteAllTextAsync(_configPath, xml);
         }
 

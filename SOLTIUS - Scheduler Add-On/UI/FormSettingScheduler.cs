@@ -20,6 +20,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private NumericUpDown numIntervalMin;
         private NumericUpDown numRealtimeSec;
         private CheckBox chkSO;
+        private CheckBox chkPO;
         private CheckBox chkSL;
         private TextBox txtServiceName;
         private Label lblServiceStatus;
@@ -97,19 +98,21 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             rbInterval.CheckedChanged += (s, e) => UpdateNumericEnable();
 
             // ===== Group: Fungsi =====
-            var grpFunc = new GroupBox { Text = "Fungsi", Location = new Point(24, 200), Size = new Size(472, 110) };
+            var grpFunc = new GroupBox { Text = "Fungsi", Location = new Point(24, 200), Size = new Size(472, 115) };
             UITheme.ApplyGroup(grpFunc);
 
-            chkSO = new CheckBox { Text = "Sync Sales Order (ORDR)", Location = new Point(16, 30), AutoSize = true, Checked = true };
-            chkSL = new CheckBox { Text = "Sync Service Layer (OSL) — belum diimplementasikan", Location = new Point(16, 62), AutoSize = true, Enabled = false };
+            chkSO = new CheckBox { Text = "Sync Sales Order (ORDR)", Location = new Point(16, 25), AutoSize = true, Checked = true };
+            chkPO = new CheckBox { Text = "Sync Purchase Order (OPOR)", Location = new Point(16, 52), AutoSize = true, Checked = true };
+            chkSL = new CheckBox { Text = "Sync Service Layer (OSL) — belum diimplementasikan", Location = new Point(16, 79), AutoSize = true, Enabled = false };
 
             UITheme.ApplyCheck(chkSO);
+            UITheme.ApplyCheck(chkPO);
             UITheme.ApplyCheck(chkSL);
 
-            grpFunc.Controls.AddRange(new Control[] { chkSO, chkSL });
+            grpFunc.Controls.AddRange(new Control[] { chkSO, chkPO, chkSL });
 
             // ===== Group: Windows Service =====
-            var grpSvc = new GroupBox { Text = "Windows Service", Location = new Point(24, 320), Size = new Size(472, 190) };
+            var grpSvc = new GroupBox { Text = "Windows Service", Location = new Point(24, 325), Size = new Size(472, 190) };
             UITheme.ApplyGroup(grpSvc);
 
             var lblSvcName = new Label { Text = "Nama Service", AutoSize = true, Location = new Point(16, 32) };
@@ -188,6 +191,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             numIntervalMin.Value = Math.Max(1, _config.IntervalMinutes);
             numRealtimeSec.Value = Math.Max(5, _config.RealtimeSeconds);
             chkSO.Checked = _config.SyncSalesOrder;
+            chkPO.Checked = _config.SyncPurchaseOrder;
             chkSL.Checked = _config.SyncServiceLayer;
             txtServiceName.Text = string.IsNullOrWhiteSpace(_config.ServiceName) ? "SOLTIUSSchedulerService" : _config.ServiceName;
             UpdateNumericEnable();
@@ -200,6 +204,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             _config.IntervalMinutes = (int)numIntervalMin.Value;
             _config.RealtimeSeconds = (int)numRealtimeSec.Value;
             _config.SyncSalesOrder = chkSO.Checked;
+            _config.SyncPurchaseOrder = chkPO.Checked;
             _config.SyncServiceLayer = chkSL.Checked;
             _config.ServiceName = txtServiceName.Text.Trim();
             if (string.IsNullOrWhiteSpace(_config.ServiceName))
@@ -213,7 +218,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             string intervalDesc = _config.Mode == "Realtime"
                 ? $"setiap {_config.RealtimeSeconds} detik"
                 : $"setiap {_config.IntervalMinutes} menit";
-            MessageBox.Show($"Setting tersimpan.\n\nMode: {_config.Mode}\nInterval: {intervalDesc}\nSales Order: {(chkSO.Checked ? "Aktif" : "Nonaktif")}\n\n" +
+            MessageBox.Show($"Setting tersimpan.\n\nMode: {_config.Mode}\nInterval: {intervalDesc}\nSales Order: {(chkSO.Checked ? "Aktif" : "Nonaktif")}\nPurchase Order: {(chkPO.Checked ? "Aktif" : "Nonaktif")}\n\n" +
                 "Perubahan interval berlaku saat service di-restart (Stop → Start).",
                 "Setting Scheduler", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }

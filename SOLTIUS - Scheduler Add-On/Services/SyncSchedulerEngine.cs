@@ -104,9 +104,9 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                 SchedulerConfig config = SchedulerConfig.Load();
                 WriteLog($"Cycle dimulai. Profil aktif: {new ConfigService().GetActiveProfileName() ?? "-"}");
 
-                if (!config.SyncSalesOrder && !config.SyncServiceLayer)
+                if (!config.SyncSalesOrder && !config.SyncPurchaseOrder && !config.SyncServiceLayer)
                 {
-                    WriteLog("Semua fungsi mati (Sales Order & Service Layer nonaktif) — cycle dilewati.");
+                    WriteLog("Semua fungsi mati (Sales Order, Purchase Order & Service Layer nonaktif) — cycle dilewati.");
                     return;
                 }
 
@@ -119,12 +119,24 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
                 int failed = 0;
                 if (config.SyncSalesOrder)
-                    failed = SalesOrderSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
+                {
+                    int soFailed = SalesOrderSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
+                    failed += soFailed;
+                    WriteLog(soFailed == 0
+                        ? "Sync Sales Order selesai — semua dokumen pending tersinkronisasi."
+                        : $"Sync Sales Order selesai — {soFailed} dokumen gagal.");
+                }
+
+                if (config.SyncPurchaseOrder)
+                {
+                    int poFailed = PurchaseOrderSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
+                    failed += poFailed;
+                    WriteLog(poFailed == 0
+                        ? "Sync Purchase Order selesai — semua dokumen pending tersinkronisasi."
+                        : $"Sync Purchase Order selesai — {poFailed} dokumen gagal.");
+                }
 
                 _lastFailedCount = failed;
-                WriteLog(failed == 0
-                    ? "Sync Sales Order selesai — semua dokumen pending tersinkronisasi."
-                    : $"Sync Sales Order selesai — {failed} dokumen gagal.");
             }
             catch (Exception ex)
             {

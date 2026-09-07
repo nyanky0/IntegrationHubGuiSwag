@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,17 +18,29 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         // List memori untuk menampung data dari XML
         private List<AppConfig> loadedConfigs = new List<AppConfig>();
 
+        /// <summary>
+        /// Nama profil yang dipilih oleh user saat menekan Choose.
+        /// </summary>
+        public string SelectedProfileName { get; private set; }
+
         public FormChooseCF()
-                {
-                    InitializeComponent();
-                    UITheme.ApplyForm(this); // default center screen; dipanggil sbg dialog => di-override CenterParent di pemanggil
-                    // Binding Event Handlers ke Tombol
-                    this.button1.Click += new System.EventHandler(this.button1_Click); // Choose
-            this.button2.Click += new System.EventHandler(this.button2_Click_1); // Manage
-            this.button3.Click += new System.EventHandler(this.button3_Click); // Create
+        {
+            InitializeComponent();
+            UITheme.ApplyForm(this); // default center screen; dipanggil sbg dialog => di-override CenterParent di pemanggil
+
+            // Pastikan event handler tombol tidak terdaftar ganda
+            this.button1.Click -= this.button1_Click;
+            this.button1.Click += this.button1_Click; // Choose
+
+            this.button2.Click -= this.button2_Click_1;
+            this.button2.Click += this.button2_Click_1; // Manage
+
+            this.button3.Click -= this.button3_Click;
+            this.button3.Click += this.button3_Click; // Create
 
             // Event Load Form
-            this.Load += new System.EventHandler(this.FormChooseCF_Load);
+            this.Load -= this.FormChooseCF_Load;
+            this.Load += this.FormChooseCF_Load;
         }
 
         private void FormChooseCF_Load(object sender, EventArgs e)
@@ -241,7 +253,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                     }
                 }
 
-                MessageBox.Show($"Profil '{selectedProfile}' aktif digunakan.", "Berhasil", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SelectedProfileName = selectedProfile;
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }
@@ -298,11 +310,14 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         // --- BUTTON 3: CREATE (Add New) ---
         private void button3_Click(object sender, EventArgs e)
         {
-            FormCreate frm = new FormCreate();
-            frm.ShowDialog();
+            using (FormCreate frm = new FormCreate())
+            {
+                frm.StartPosition = FormStartPosition.CenterParent;
+                frm.ShowDialog();
+            }
 
-            // Reload total agar profil baru muncul di daftar
-            FormChooseCF_Load(null, null);
+            // Reload data profil tanpa memicu ulang event load
+            RefreshDataSetelahEdit();
         }
 
         private void checkBox1_CheckedChanged(object sender, EventArgs e) { }

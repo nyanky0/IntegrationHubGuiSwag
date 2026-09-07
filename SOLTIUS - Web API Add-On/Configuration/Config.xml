@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Configuration>
-    <ExternalDatabase>
-    	<ExternalDBType></ExternalDBType>
-   	    <ExternalDBServer></ExternalDBServer>
-    	<ExternalDBPort>0</ExternalDBPort>
-    	<ExternalDBName></ExternalDBName>
-    	<ExternalDBUser></ExternalDBUser>
-    	<ExternalDBPass></ExternalDBPass>
-    </ExternalDatabase>
+  <Environment>Development</Environment>
+  <ExternalDatabase>
+    <ExternalDBType>SQLServer</ExternalDBType>
+    <ExternalDBServer>localhost</ExternalDBServer>
+    <ExternalDBPort>1433</ExternalDBPort>
+    <ExternalDBName>NYANKYO</ExternalDBName>
+    <ExternalDBUser>sa</ExternalDBUser>
+    <ExternalDBPass>P@ssw0rd</ExternalDBPass>
+  </ExternalDatabase>
 </Configuration>

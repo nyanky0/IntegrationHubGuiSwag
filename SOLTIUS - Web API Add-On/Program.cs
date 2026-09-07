@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -35,29 +35,69 @@ var jwtSection = builder.Configuration.GetSection("Jwt");
 builder.Services.Configure<JwtOptions>(jwtSection);
 JwtOptions jwtOptions = jwtSection.Get<JwtOptions>() ?? new JwtOptions();
 
+// 1. Resolve JWT_SIGNING_KEY dari env variable jika tersedia
+string? envSigningKey = Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
+if (!string.IsNullOrWhiteSpace(envSigningKey))
+{
+    jwtOptions.SigningKey = envSigningKey;
+}
+
 if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) ||
+    jwtOptions.SigningKey.StartsWith("${") ||
     jwtOptions.SigningKey.Length < 32 ||
     jwtOptions.SigningKey.Contains("BABIBABIBABIBABIBABIBABIBABIBABIBABIBABI"))
 {
-    throw new InvalidOperationException(
-        "JWT SigningKey is not configured. " +
-        "Set environment variable JWT_SIGNING_KEY to a random string (min 32 chars).");
+    if (builder.Environment.IsDevelopment())
+    {
+        jwtOptions.SigningKey = "SoltiusAddonSecretKey2026Min32CharactersLong!";
+    }
+    else
+    {
+        throw new InvalidOperationException(
+            "JWT SigningKey is not configured. " +
+            "Set environment variable JWT_SIGNING_KEY to a random string (min 32 chars).");
+    }
 }
 
-// Validate client secrets
+// 2. Validate & resolve client secrets
+string? envClientSecret = Environment.GetEnvironmentVariable("CLIENT_SECRET");
 if (jwtOptions.Clients != null)
 {
     foreach (var client in jwtOptions.Clients)
     {
+        if (!string.IsNullOrWhiteSpace(envClientSecret))
+        {
+            client.ClientSecret = envClientSecret;
+        }
+
         if (string.IsNullOrWhiteSpace(client.ClientSecret) ||
+            client.ClientSecret.StartsWith("${") ||
             client.ClientSecret.Contains("BABIBABIBABIBABIBABIBABIBABIBABIBABIBABI"))
         {
-            throw new InvalidOperationException(
-                $"Client '{client.ClientId}' has a default ClientSecret. " +
-                $"Set environment variable CLIENT_SECRET before starting.");
+            if (builder.Environment.IsDevelopment())
+            {
+                client.ClientSecret = "SoltiusClientSecretSchedulerAddon2026!";
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Client '{client.ClientId}' has a default ClientSecret. " +
+                    $"Set environment variable CLIENT_SECRET before starting.");
+            }
         }
     }
 }
+
+// Pastikan JwtOptions di DI terupdate dengan key & secret yang telah di-resolve
+builder.Services.PostConfigure<JwtOptions>(options =>
+{
+    options.SigningKey = jwtOptions.SigningKey;
+    options.Issuer = jwtOptions.Issuer;
+    options.Audience = jwtOptions.Audience;
+    options.AccessTokenMinutes = jwtOptions.AccessTokenMinutes;
+    options.RefreshTokenDays = jwtOptions.RefreshTokenDays;
+    options.Clients = jwtOptions.Clients;
+});
 
 byte[] jwtSigningKey = System.Text.Encoding.UTF8.GetBytes(jwtOptions.SigningKey);
 
@@ -78,6 +118,31 @@ builder.Services
             IssuerSigningKey = new SymmetricSecurityKey(jwtSigningKey),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
+        };
+        options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
+                if (!string.IsNullOrEmpty(authHeader))
+                {
+                    string raw = authHeader.Trim();
+                    while (raw.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        raw = raw.Substring(7).Trim();
+                    }
+                    if (!string.IsNullOrEmpty(raw))
+                    {
+                        ctx.Token = raw;
+                    }
+                }
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = ctx =>
+            {
+                Console.WriteLine($"[JWT Auth Failed]: {ctx.Exception.Message}");
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -129,13 +194,29 @@ try
 {
     var logDbSection = builder.Configuration.GetSection("LogDatabase");
     var logDb = logDbSection.Get<LogDatabaseConfig>();
-    if (logDb != null && !string.IsNullOrWhiteSpace(logDb.Server) &&
-        !string.IsNullOrWhiteSpace(logDb.DatabaseName))
+
+    string logServer = Environment.GetEnvironmentVariable("LOG_DB_SERVER") ?? logDb?.Server ?? "";
+    string logDbName = Environment.GetEnvironmentVariable("LOG_DB_NAME") ?? logDb?.DatabaseName ?? "";
+    string logUser = Environment.GetEnvironmentVariable("LOG_DB_USER") ?? logDb?.UserName ?? "";
+    string logPass = Environment.GetEnvironmentVariable("LOG_DB_PASS") ?? logDb?.Password ?? "";
+
+    if (logServer.StartsWith("${") || string.IsNullOrWhiteSpace(logServer))
     {
-        logConnStr = $"Server={logDb.Server};" +
-            (logDb.Port > 0 ? $"Port={logDb.Port};" : "") +
-            $"Database={logDb.DatabaseName};" +
-            $"User Id={logDb.UserName};Password={logDb.Password};" +
+        if (builder.Environment.IsDevelopment())
+        {
+            logServer = "localhost";
+            logDbName = "NYANKYO";
+            logUser = "sa";
+            logPass = "P@ssw0rd";
+        }
+    }
+
+    if (!string.IsNullOrWhiteSpace(logServer) && !string.IsNullOrWhiteSpace(logDbName) && !logServer.StartsWith("${"))
+    {
+        logConnStr = $"Server={logServer};" +
+            (logDb != null && logDb.Port > 0 ? $"Port={logDb.Port};" : "") +
+            $"Database={logDbName};" +
+            $"User Id={logUser};Password={logPass};" +
             $"TrustServerCertificate=true;";
     }
 }
@@ -161,6 +242,9 @@ builder.Services.AddTransient<SqlServerDatabaseInitializer>();
 builder.Services.AddScoped<ISalesOrderService, SalesOrderService>();
 builder.Services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
 
+builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+builder.Services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
+
 // ============================================================
 // Swagger (P0: only in Development)
 // ============================================================
@@ -175,6 +259,14 @@ builder.Services.AddSwaggerGen(options =>
         BearerFormat = "JWT",
         In = Microsoft.OpenApi.ParameterLocation.Header,
         Description = "Input JWT Bearer token only."
+    });
+
+    options.AddSecurityRequirement((doc) => new Microsoft.OpenApi.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer"),
+            new List<string>()
+        }
     });
 });
 

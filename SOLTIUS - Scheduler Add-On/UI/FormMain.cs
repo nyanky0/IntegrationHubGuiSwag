@@ -1,4 +1,4 @@
-﻿using SOLTIUS_Scheduler_Add_On.Model;
+using SOLTIUS_Scheduler_Add_On.Model;
 using SOLTIUS_Scheduler_Add_On.Services;
 using SOLTIUS_Scheduler_Add_On.UI;
 using System;
@@ -15,7 +15,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 {
     public partial class FormMain : Form
     {
-        private List<SyncLogModel> masterLogList;
+        private List<DocumentHeaderLogModel> masterLogList;
         private readonly ConfigService _configService;
 
         // Fallback URL Web API (dipakai bila profil tidak memiliki 'Web API URL').
@@ -29,7 +29,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                     UITheme.ApplyForm(this); // StartPosition diproses saat CreateHandle — harus sebelum Show()
 
                     _configService = new ConfigService();
-            masterLogList = new List<SyncLogModel>();
+            masterLogList = new List<DocumentHeaderLogModel>();
 
             SetupUI();
             WireEvents();
@@ -38,14 +38,98 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private void SetupUI()
         {
             cbLogLevel.Items.Clear();
-            cbLogLevel.Items.AddRange(new string[] { "All", "Success", "Failed" });
+            cbLogLevel.Items.AddRange(new string[] { "All", "Success", "Failed", "Pending", "Cancelled" });
             cbLogLevel.SelectedIndex = 0;
 
             cbFunction.Items.Clear();
-            cbFunction.Items.AddRange(new string[] { "All", "Sales Order", "Service Layer" });
+            cbFunction.Items.AddRange(new string[] { "All", "Purchase Order", "Sales Order" });
             cbFunction.SelectedIndex = 0;
 
+            SetupLogGridColumns();
             RefreshGrid();
+        }
+
+        private void SetupLogGridColumns()
+        {
+            dgvlLogData.AutoGenerateColumns = false;
+            dgvlLogData.Columns.Clear();
+            dgvlLogData.ReadOnly = true;
+            dgvlLogData.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dgvlLogData.MultiSelect = false;
+
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colDocType",
+                HeaderText = "Doc Type",
+                DataPropertyName = "DocType",
+                Width = 120
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colWebTxNumber",
+                HeaderText = "Web Tx Number",
+                DataPropertyName = "WebTxNumber",
+                Width = 140
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colCardCode",
+                HeaderText = "BP Code",
+                DataPropertyName = "CardCode",
+                Width = 100
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colCardName",
+                HeaderText = "BP Name",
+                DataPropertyName = "CardName",
+                Width = 160
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colDocDate",
+                HeaderText = "Doc Date",
+                DataPropertyName = "DocDate",
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+                Width = 95
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colDocDueDate",
+                HeaderText = "Due Date",
+                DataPropertyName = "DocDueDate",
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+                Width = 95
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colStatus",
+                HeaderText = "Status",
+                DataPropertyName = "Status",
+                Width = 90
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colDocEntry",
+                HeaderText = "DocEntry SAP",
+                DataPropertyName = "DocEntry",
+                Width = 100
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colProcessedAt",
+                HeaderText = "Processed At",
+                DataPropertyName = "ProcessedAt",
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm:ss" },
+                Width = 135
+            });
+            dgvlLogData.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "colErrorMessage",
+                HeaderText = "Error / Info",
+                DataPropertyName = "ErrorMessage",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            });
         }
 
         private void WireEvents()
@@ -75,6 +159,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             if (txtSearchLog != null) this.txtSearchLog.TextChanged += (s, e) => RefreshGrid();
             if (btnExportExcel != null) this.btnExportExcel.Click += btnExportExcel_Click;
+            if (dgvlLogData != null) this.dgvlLogData.CellDoubleClick += dgvlLogData_CellDoubleClick;
             if (exportProfilesToolStripMenuItem != null) this.exportProfilesToolStripMenuItem.Click += ExportProfiles_Click;
             if (importProfilesToolStripMenuItem != null) this.importProfilesToolStripMenuItem.Click += ImportProfiles_Click;
         }
@@ -127,12 +212,14 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             var dbService = GetDatabaseService();
             if (dbService == null) return;
 
-            masterLogList = dbService.LoadLogHistory();
+            masterLogList = dbService.LoadDocumentHeaderLogs();
             RefreshGrid();
         }
 
         private void RefreshGrid()
         {
+            if (masterLogList == null) masterLogList = new List<DocumentHeaderLogModel>();
+
             // Ambil filter teks/combobox
             string filterStatus = cbLogLevel.SelectedItem?.ToString() ?? "All";
             string filterFunction = cbFunction.SelectedItem?.ToString() ?? "All";
@@ -143,24 +230,42 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             DateTime toDate = dtpStgTo.Value.Date;
 
             var filteredList = masterLogList.Where(x =>
-                // 1. FILTER TANGGAL
-                (x.CreatedAt.Date >= fromDate && x.CreatedAt.Date <= toDate) &&
+                // 1. FILTER TANGGAL (berdasarkan CreatedAt jika valid, jika tidak pakai DocDate)
+                ((x.CreatedAt != DateTime.MinValue ? x.CreatedAt.Date : x.DocDate.Date) >= fromDate &&
+                 (x.CreatedAt != DateTime.MinValue ? x.CreatedAt.Date : x.DocDate.Date) <= toDate) &&
 
                 // 2. FILTER STATUS & FUNGSI
-                (filterStatus == "All" || x.Status == filterStatus) &&
-                (filterFunction == "All" || x.DocType == filterFunction) &&
+                (filterStatus == "All" || x.Status.Equals(filterStatus, StringComparison.OrdinalIgnoreCase)) &&
+                (filterFunction == "All" || x.DocType.Equals(filterFunction, StringComparison.OrdinalIgnoreCase)) &&
 
                 // 3. FILTER PENCARIAN TEKS
                 (string.IsNullOrEmpty(searchKeyword) ||
-                 (x.CardCode != null && x.CardCode.ToLower().Contains(searchKeyword)) ||
-                 (x.ItemCode != null && x.ItemCode.ToLower().Contains(searchKeyword)) ||
-                 (x.DocEntry != null && x.DocEntry.ToLower().Contains(searchKeyword)) ||
-                 (x.ErrorSource != null && x.ErrorSource.ToLower().Contains(searchKeyword)) ||
-                 (x.ErrorMessage != null && x.ErrorMessage.ToLower().Contains(searchKeyword)))
+                 (!string.IsNullOrEmpty(x.WebTxNumber) && x.WebTxNumber.ToLower().Contains(searchKeyword)) ||
+                 (!string.IsNullOrEmpty(x.CardCode) && x.CardCode.ToLower().Contains(searchKeyword)) ||
+                 (!string.IsNullOrEmpty(x.CardName) && x.CardName.ToLower().Contains(searchKeyword)) ||
+                 (!string.IsNullOrEmpty(x.DocEntry) && x.DocEntry.ToLower().Contains(searchKeyword)) ||
+                 (!string.IsNullOrEmpty(x.Remarks) && x.Remarks.ToLower().Contains(searchKeyword)) ||
+                 (!string.IsNullOrEmpty(x.ErrorMessage) && x.ErrorMessage.ToLower().Contains(searchKeyword)))
             ).ToList();
 
-            dgvlLogData.DataSource = new System.ComponentModel.BindingList<SyncLogModel>(filteredList);
+            dgvlLogData.DataSource = new System.ComponentModel.BindingList<DocumentHeaderLogModel>(filteredList);
             dgvlLogData.Refresh();
+        }
+
+        private void dgvlLogData_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= dgvlLogData.Rows.Count) return;
+
+            var selectedDoc = dgvlLogData.Rows[e.RowIndex].DataBoundItem as DocumentHeaderLogModel;
+            if (selectedDoc == null) return;
+
+            var dbService = GetDatabaseService();
+            if (dbService == null) return;
+
+            using (var frmDetail = new FormDocumentDetail(selectedDoc, dbService))
+            {
+                frmDetail.ShowDialog(this);
+            }
         }
 
         private void tabControl1_SelectedIndexChanged(object sender, EventArgs e)
@@ -180,7 +285,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 return;
             }
 
-            if (!chkSO.Checked && !chkSL.Checked && !chkLogData.Checked)
+            if (!chkSO.Checked && !chkPO.Checked && !chkSL.Checked && !chkLogData.Checked)
             {
                 MessageBox.Show("Pilih minimal satu kategori sinkronisasi.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
                 return;
@@ -188,7 +293,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             if (chkSL.Checked)
             {
-                MessageBox.Show("Sinkronisasi Service Layer belum diimplementasikan. Centang hanya 'Sales Order' untuk sekarang.",
+                MessageBox.Show("Sinkronisasi Service Layer belum diimplementasikan. Centang 'Sales Order' atau 'Purchase Order' untuk sekarang.",
                                 "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
@@ -218,6 +323,13 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             if (chkLogData.Checked) { masterLogList.Clear(); RefreshGrid(); }
 
+            if (!chkSO.Checked && !chkPO.Checked)
+            {
+                MessageBox.Show("Pilih minimal satu modul untuk disinkronisasi (Sales Order atau Purchase Order).", "Peringatan", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                SetUIState(true);
+                return;
+            }
+
             // =========================================================================
             // AMBIL DATA PENDING DARI TABEL STAGING (bukan data hardcoded)
             // =========================================================================
@@ -237,17 +349,33 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("Gagal memuat data pending dari staging: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("Gagal memuat data Sales Order pending dari staging: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     SetUIState(true);
                     return;
                 }
+            }
 
-                if (pendingOrders.Count == 0)
+            var pendingPurchaseOrders = new List<PendingPurchaseOrder>();
+            if (chkPO.Checked)
+            {
+                try
                 {
-                    MessageBox.Show("Tidak ada Sales Order pending di staging (process_status = 0).", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    pendingPurchaseOrders = dbService.LoadPendingPurchaseOrders();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Gagal memuat data Purchase Order pending dari staging: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     SetUIState(true);
                     return;
                 }
+            }
+
+            int totalDocCount = pendingOrders.Count + pendingPurchaseOrders.Count;
+            if (totalDocCount == 0)
+            {
+                MessageBox.Show("Tidak ada dokumen pending di staging (process_status = 0).", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SetUIState(true);
+                return;
             }
 
             bool isDryRun = chkDryRun?.Checked ?? false;
@@ -256,15 +384,15 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             try
             {
-                failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingOrders, isDryRun, progress));
+                failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingOrders, pendingPurchaseOrders, isDryRun, progress));
 
-                RefreshGrid();
+                LoadLogFromDatabase();
                 string modeSuffix = isDryRun ? " (Mode Simulasi)" : "";
 
                 if (failedCount > 0)
-                    MessageBox.Show($"Sync Selesai{modeSuffix}!\nBerhasil: {pendingOrders.Count - failedCount} dokumen.\nGagal: {failedCount} dokumen.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show($"Sync Selesai{modeSuffix}!\nBerhasil: {totalDocCount - failedCount} dokumen.\nGagal: {failedCount} dokumen.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 else
-                    MessageBox.Show($"Sinkronisasi Berhasil Sepenuhnya{modeSuffix}!\nSemua {pendingOrders.Count} dokumen tersinkronisasi.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show($"Sinkronisasi Berhasil Sepenuhnya{modeSuffix}!\nSemua {totalDocCount} dokumen tersinkronisasi.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -275,10 +403,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 SetUIState(true);
             }
         }
-        private int ProcessSyncInSequence(AppConfig config, DatabaseService dbService, List<PendingSalesOrder> orders, bool isDryRun, IProgress<int> progress)
+
+        private int ProcessSyncInSequence(AppConfig config, DatabaseService dbService, List<PendingSalesOrder> orders, List<PendingPurchaseOrder> poOrders, bool isDryRun, IProgress<int> progress)
         {
             int failedCount = 0;
-            int totalTasks = orders.Count;
+            int totalTasks = orders.Count + poOrders.Count;
+            if (totalTasks == 0) return 0;
             int completedTasks = 0;
 
             progress.Report(10);
@@ -295,6 +425,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                     }
                     progress.Report(30);
 
+                    // 1. Sync Sales Orders
                     foreach (var order in orders)
                     {
                         try
@@ -308,7 +439,6 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                             {
                                 string docEntry = sapService.ExecuteSalesOrderSync(order);
                                 LogSyncResult(dbService, order, "Success", docEntry, "-");
-                                // Update staging: sukses
                                 dbService?.UpdateSalesOrderStatus(order.HeaderId, 1);
                             }
                         }
@@ -316,8 +446,36 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                         {
                             failedCount++;
                             LogSyncResult(dbService, order, "Failed", null, ex.Message);
-                            // Update staging: gagal
                             dbService?.UpdateSalesOrderStatus(order.HeaderId, 2, ex.Message);
+                        }
+
+                        completedTasks++;
+                        int currentProgress = 30 + (int)((completedTasks / (float)totalTasks) * 70);
+                        progress.Report(Math.Min(currentProgress, 100));
+                    }
+
+                    // 2. Sync Purchase Orders
+                    foreach (var po in poOrders)
+                    {
+                        try
+                        {
+                            if (isDryRun)
+                            {
+                                System.Threading.Thread.Sleep(100);
+                                LogSyncResult(dbService, po, "Success", "DRY-RUN", "Validasi berhasil (Mode Simulasi)");
+                            }
+                            else
+                            {
+                                string docEntry = sapService.ExecutePurchaseOrderSync(po);
+                                LogSyncResult(dbService, po, "Success", docEntry, "-");
+                                dbService?.UpdatePurchaseOrderStatus(po.HeaderId, 1, null, docEntry);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            failedCount++;
+                            LogSyncResult(dbService, po, "Failed", null, ex.Message);
+                            dbService?.UpdatePurchaseOrderStatus(po.HeaderId, 2, ex.Message);
                         }
 
                         completedTasks++;
@@ -360,7 +518,33 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                     CreatedAt = DateTime.Now
                 };
 
-                this.Invoke(new Action(() => masterLogList.Add(log)));
+                dbService?.SaveLogToDatabase(log);
+            }
+            catch
+            {
+                // Logging gagal tidak boleh mengganggu proses sync utama
+            }
+        }
+
+        private void LogSyncResult(DatabaseService dbService, PendingPurchaseOrder order, string status, string docEntry, string errorMessage)
+        {
+            try
+            {
+                var log = new SyncLogModel
+                {
+                    DocType = "Purchase Order",
+                    DocEntry = docEntry ?? "",
+                    CardCode = order.CardCode,
+                    ItemCode = order.Lines.Count > 0 ? order.Lines[0].ItemCode : "",
+                    Quantity = order.Lines.Count > 0 ? (double)order.Lines[0].Quantity : 0,
+                    Price = order.Lines.Count > 0 ? (double)order.Lines[0].Price : 0,
+                    WarehouseCode = order.Lines.Count > 0 ? order.Lines[0].Warehouse : "",
+                    Status = status,
+                    ErrorSource = status == "Failed" ? "SAP Validation" : "-",
+                    ErrorMessage = errorMessage ?? "-",
+                    CreatedAt = DateTime.Now
+                };
+
                 dbService?.SaveLogToDatabase(log);
             }
             catch
@@ -441,7 +625,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 return;
             }
 
-            using (SaveFileDialog sfd = new SaveFileDialog { Filter = "Excel Workbook|*.xlsx", FileName = $"SyncLog_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx" })
+            using (SaveFileDialog sfd = new SaveFileDialog { Filter = "Excel Workbook|*.xlsx", FileName = $"SyncDocLog_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx" })
             {
                 if (sfd.ShowDialog() == DialogResult.OK)
                 {
@@ -449,8 +633,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                     {
                         using (var workbook = new XLWorkbook())
                         {
-                            var worksheet = workbook.Worksheets.Add("Log Sinkronisasi");
-                            var currentList = ((BindingList<SyncLogModel>)dgvlLogData.DataSource).ToList();
+                            var worksheet = workbook.Worksheets.Add("Log Header Dokumen");
+                            var currentList = ((BindingList<DocumentHeaderLogModel>)dgvlLogData.DataSource).ToList();
 
                             // Header
                             worksheet.Cell(1, 1).InsertTable(currentList);
@@ -553,7 +737,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             {
                 var result = await Task.Run(() => ProcessRetryInBackground(activeConfig, dbService, selectedToRetry, progress));
 
-                RefreshGrid();
+                LoadLogFromDatabase();
                 if (result.Failed > 0)
                     MessageBox.Show($"Retry selesai.\nBerhasil: {result.Success}\nMasih gagal: {result.Failed}\n\nData gagal akan muncul kembali di daftar retry.", "Retry Selesai", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 else
@@ -585,6 +769,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                     {
                         if (task.DocType == "Sales Order")
                             sapService.ExecuteSalesOrderSync(task);
+                        else if (task.DocType == "Purchase Order")
+                            sapService.ExecutePurchaseOrderSync(task);
 
                         task.Status = "Success";
                         dbService.MarkErrorsAsResolved(task.CardCode, task.ItemCode);
@@ -659,16 +845,18 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 if (frmChoose.ShowDialog() == DialogResult.OK)
                 {
                     UpdateActiveProfileLabel();
+                    string activeName = frmChoose.SelectedProfileName ?? _configService.GetActiveProfileName();
+                    string profileInfo = !string.IsNullOrEmpty(activeName) ? $"Profil '{activeName}'" : "Profil";
 
                     try
                     {
                         await _configService.SendActiveConfigurationToWebAsync(webEndpointUrl);
-                        MessageBox.Show("Profile berhasil diubah & Konfigurasi XML dikirim ke Web Server!",
+                        MessageBox.Show($"{profileInfo} aktif digunakan & konfigurasi berhasil dikirim ke Web Server!",
                                         "Informasi", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show($"Profile berhasil diubah, namun GAGAL mengirim ke Web Server:\n{ex.Message}",
+                        MessageBox.Show($"{profileInfo} aktif digunakan, namun GAGAL mengirim ke Web Server:\n{ex.Message}",
                                         "Warning Endpoint", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
                 }

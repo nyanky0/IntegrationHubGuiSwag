@@ -1,4 +1,4 @@
-﻿namespace SOLTIUS_Scheduler_Add_On.UI
+namespace SOLTIUS_Scheduler_Add_On.UI
 {
     partial class FormMain
     {
@@ -38,6 +38,8 @@
             this.label6 = new System.Windows.Forms.Label();
             this.chkSO = new System.Windows.Forms.CheckBox();
             this.label3 = new System.Windows.Forms.Label();
+            this.chkPO = new System.Windows.Forms.CheckBox();
+            this.labelPO = new System.Windows.Forms.Label();
             this.chkLogData = new System.Windows.Forms.CheckBox();
             this.label7 = new System.Windows.Forms.Label();
             this.chkAll1 = new System.Windows.Forms.CheckBox();
@@ -193,6 +195,8 @@
             // 
             this.grpBox1_1.Controls.Add(this.chkSL);
             this.grpBox1_1.Controls.Add(this.label6);
+            this.grpBox1_1.Controls.Add(this.chkPO);
+            this.grpBox1_1.Controls.Add(this.labelPO);
             this.grpBox1_1.Controls.Add(this.chkSO);
             this.grpBox1_1.Controls.Add(this.label3);
             this.grpBox1_1.Location = new System.Drawing.Point(8, 20);
@@ -203,28 +207,6 @@
             this.grpBox1_1.TabIndex = 4;
             this.grpBox1_1.TabStop = false;
             this.grpBox1_1.Text = "Other to SAP B1";
-            // 
-            // chkSL
-            // 
-            this.chkSL.AutoSize = true;
-            this.chkSL.Location = new System.Drawing.Point(8, 48);
-            this.chkSL.Margin = new System.Windows.Forms.Padding(4);
-            this.chkSL.Name = "chkSL";
-            this.chkSL.Size = new System.Drawing.Size(145, 20);
-            this.chkSL.TabIndex = 16;
-            this.chkSL.Text = "Sync Service Layer";
-            this.chkSL.UseVisualStyleBackColor = true;
-            // 
-            // label6
-            // 
-            this.label6.AutoSize = true;
-            this.label6.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label6.Location = new System.Drawing.Point(328, 48);
-            this.label6.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
-            this.label6.Name = "label6";
-            this.label6.Size = new System.Drawing.Size(45, 17);
-            this.label6.TabIndex = 17;
-            this.label6.Text = "-OSL";
             // 
             // chkSO
             // 
@@ -247,6 +229,50 @@
             this.label3.Size = new System.Drawing.Size(59, 17);
             this.label3.TabIndex = 15;
             this.label3.Text = "-ORDR";
+            // 
+            // chkPO
+            // 
+            this.chkPO.AutoSize = true;
+            this.chkPO.Location = new System.Drawing.Point(8, 48);
+            this.chkPO.Margin = new System.Windows.Forms.Padding(4);
+            this.chkPO.Name = "chkPO";
+            this.chkPO.Size = new System.Drawing.Size(155, 20);
+            this.chkPO.TabIndex = 16;
+            this.chkPO.Text = "Sync Purchase Order";
+            this.chkPO.UseVisualStyleBackColor = true;
+            // 
+            // labelPO
+            // 
+            this.labelPO.AutoSize = true;
+            this.labelPO.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelPO.Location = new System.Drawing.Point(328, 48);
+            this.labelPO.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.labelPO.Name = "labelPO";
+            this.labelPO.Size = new System.Drawing.Size(59, 17);
+            this.labelPO.TabIndex = 17;
+            this.labelPO.Text = "-OPOR";
+            // 
+            // chkSL
+            // 
+            this.chkSL.AutoSize = true;
+            this.chkSL.Location = new System.Drawing.Point(8, 76);
+            this.chkSL.Margin = new System.Windows.Forms.Padding(4);
+            this.chkSL.Name = "chkSL";
+            this.chkSL.Size = new System.Drawing.Size(145, 20);
+            this.chkSL.TabIndex = 18;
+            this.chkSL.Text = "Sync Service Layer";
+            this.chkSL.UseVisualStyleBackColor = true;
+            // 
+            // label6
+            // 
+            this.label6.AutoSize = true;
+            this.label6.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.label6.Location = new System.Drawing.Point(328, 76);
+            this.label6.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.label6.Name = "label6";
+            this.label6.Size = new System.Drawing.Size(45, 17);
+            this.label6.TabIndex = 19;
+            this.label6.Text = "-OSL";
             // 
             // chkLogData
             // 
@@ -519,6 +545,8 @@
         private System.Windows.Forms.Label label6;
         private System.Windows.Forms.CheckBox chkSO;
         private System.Windows.Forms.Label label3;
+        private System.Windows.Forms.CheckBox chkPO;
+        private System.Windows.Forms.Label labelPO;
         private System.Windows.Forms.CheckBox chkLogData;
         private System.Windows.Forms.Label label7;
         internal System.Windows.Forms.CheckBox chkAll1;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,14 +17,16 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private AppConfig _originalConfig;
 
         public ManageProfile(AppConfig config)
-                {
-                    InitializeComponent();
-                    UITheme.ApplyForm(this); // center screen — StartPosition harus di-set sebelum Show
-                    this._originalConfig = config;
+        {
+            InitializeComponent();
+            UITheme.ApplyForm(this); // center screen — StartPosition harus di-set sebelum Show
+            this._originalConfig = config;
 
             // Binding Event Handlers
-            this.Load += new System.EventHandler(this.FormManage_Load);
-            this.button1.Click += new System.EventHandler(this.button1_Click); // Button Update
+            this.Load -= this.FormManage_Load;
+            this.Load += this.FormManage_Load;
+            this.button1.Click -= this.button1_Click;
+            this.button1.Click += this.button1_Click; // Button Update
         }
 
         private void FormManage_Load(object sender, EventArgs e)

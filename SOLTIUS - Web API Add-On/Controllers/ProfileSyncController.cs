@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using SOLTIUS_Web_API_Add_On.Services.AuditLog;
 using SOLTIUS_Web_API_Add_On.Services.Configuration;
 
 namespace SOLTIUS_Web_API_Add_On.Controllers
 {
+    [AllowAnonymous]
     [Route("api/[controller]")]
     public class ProfileSyncController : CustomApiControllerBase
     {

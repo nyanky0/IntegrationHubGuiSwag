@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -223,7 +223,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Model\DocumentHeaderLogModel.cs" />
     <Compile Include="Model\Model.cs" />
+    <Compile Include="Model\PendingPurchaseOrder.cs" />
     <Compile Include="Model\PendingSalesOrder.cs" />
     <Compile Include="Model\SchedulerConfig.cs" />
     <Compile Include="Program.cs" />
@@ -235,6 +237,7 @@
     <Compile Include="Services\ConfigService.cs" />
     <Compile Include="Services\DatabaseService.cs" />
     <Compile Include="Services\ProfileSyncService.cs" />
+    <Compile Include="Services\PurchaseOrderSyncRunner.cs" />
     <Compile Include="Services\SalesOrderSyncRunner.cs" />
     <Compile Include="Services\SapSyncService.cs" />
     <Compile Include="Services\SyncSchedulerEngine.cs" />
@@ -245,6 +248,12 @@
     </Compile>
     <Compile Include="UI\FormChooseCF.Designer.cs">
       <DependentUpon>FormChooseCF.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\FormDocumentDetail.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\FormDocumentDetail.Designer.cs">
+      <DependentUpon>FormDocumentDetail.cs</DependentUpon>
     </Compile>
     <Compile Include="UI\FormCreate.cs">
       <SubType>Form</SubType>
