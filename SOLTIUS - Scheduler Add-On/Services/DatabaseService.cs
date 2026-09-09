@@ -1150,5 +1150,219 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
             return result;
         }
+
+        #region DEBUG & MAINTENANCE
+        public class TransactionSummary
+        {
+            public int SalesOrderHeaderCount { get; set; }
+            public int SalesOrderDetailCount { get; set; }
+            public int PurchaseOrderHeaderCount { get; set; }
+            public int PurchaseOrderDetailCount { get; set; }
+            public int SyncHistoryCount { get; set; }
+            public int SyncErrorCount { get; set; }
+
+            public int TotalTransactions
+            {
+                get { return SalesOrderHeaderCount + PurchaseOrderHeaderCount; }
+            }
+
+            public int TotalRecords
+            {
+                get
+                {
+                    return SalesOrderHeaderCount + SalesOrderDetailCount +
+                           PurchaseOrderHeaderCount + PurchaseOrderDetailCount +
+                           SyncHistoryCount + SyncErrorCount;
+                }
+            }
+        }
+
+        public TransactionSummary GetTransactionSummary()
+        {
+            var summary = new TransactionSummary();
+            if (string.IsNullOrEmpty(_connectionString)) return summary;
+
+            try
+            {
+                using (var conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    string query = @"
+                        SELECT
+                            CASE WHEN OBJECT_ID('sales_order_header', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM sales_order_header) ELSE 0 END AS SO_H,
+                            CASE WHEN OBJECT_ID('sales_order_detail', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM sales_order_detail) ELSE 0 END AS SO_D,
+                            CASE WHEN OBJECT_ID('SOL_PURCHASE_ORDER_HEADER', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM SOL_PURCHASE_ORDER_HEADER) ELSE 0 END AS PO_H,
+                            CASE WHEN OBJECT_ID('SOL_PURCHASE_ORDER_DETAIL', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM SOL_PURCHASE_ORDER_DETAIL) ELSE 0 END AS PO_D,
+                            CASE WHEN OBJECT_ID('TBL_SYNC_HISTORY', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM TBL_SYNC_HISTORY) ELSE 0 END AS SYNC_H,
+                            CASE WHEN OBJECT_ID('TBL_SYNC_ERROR', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM TBL_SYNC_ERROR) ELSE 0 END AS SYNC_E";
+
+                    using (var cmd = new SqlCommand(query, conn))
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            summary.SalesOrderHeaderCount = Convert.ToInt32(reader["SO_H"]);
+                            summary.SalesOrderDetailCount = Convert.ToInt32(reader["SO_D"]);
+                            summary.PurchaseOrderHeaderCount = Convert.ToInt32(reader["PO_H"]);
+                            summary.PurchaseOrderDetailCount = Convert.ToInt32(reader["PO_D"]);
+                            summary.SyncHistoryCount = Convert.ToInt32(reader["SYNC_H"]);
+                            summary.SyncErrorCount = Convert.ToInt32(reader["SYNC_E"]);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("GetTransactionSummary Error: " + ex.Message);
+            }
+
+            return summary;
+        }
+
+        public bool DeleteAllTransactions(out int totalDeleted, out string errorMessage)
+        {
+            totalDeleted = 0;
+            errorMessage = string.Empty;
+
+            if (string.IsNullOrEmpty(_connectionString))
+            {
+                errorMessage = "Connection string database belum terkonfigurasi.";
+                return false;
+            }
+
+            try
+            {
+                using (var conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    var summaryBefore = GetTransactionSummary();
+                    totalDeleted = summaryBefore.TotalRecords;
+
+                    string deleteScript = @"
+                        IF OBJECT_ID('sales_order_detail', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM sales_order_detail;
+                            BEGIN TRY DBCC CHECKIDENT('sales_order_detail', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END
+
+                        IF OBJECT_ID('sales_order_header', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM sales_order_header;
+                            BEGIN TRY DBCC CHECKIDENT('sales_order_header', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END
+
+                        IF OBJECT_ID('SOL_PURCHASE_ORDER_DETAIL', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM SOL_PURCHASE_ORDER_DETAIL;
+                            BEGIN TRY DBCC CHECKIDENT('SOL_PURCHASE_ORDER_DETAIL', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END
+
+                        IF OBJECT_ID('SOL_PURCHASE_ORDER_HEADER', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM SOL_PURCHASE_ORDER_HEADER;
+                            BEGIN TRY DBCC CHECKIDENT('SOL_PURCHASE_ORDER_HEADER', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END
+
+                        IF OBJECT_ID('TBL_SYNC_HISTORY', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM TBL_SYNC_HISTORY;
+                            BEGIN TRY DBCC CHECKIDENT('TBL_SYNC_HISTORY', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END
+
+                        IF OBJECT_ID('TBL_SYNC_ERROR', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM TBL_SYNC_ERROR;
+                            BEGIN TRY DBCC CHECKIDENT('TBL_SYNC_ERROR', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END";
+
+                    using (var cmd = new SqlCommand(deleteScript, conn))
+                    {
+                        cmd.CommandTimeout = 120;
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        public bool DeleteSingleTransaction(string docType, long headerId, string webTxNumber, string docEntry, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            if (string.IsNullOrEmpty(_connectionString))
+            {
+                errorMessage = "Connection string database belum terkonfigurasi.";
+                return false;
+            }
+
+            try
+            {
+                using (var conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    string sql = string.Empty;
+                    if (string.Equals(docType, "Sales Order", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sql = @"
+                            IF OBJECT_ID('sales_order_detail', 'U') IS NOT NULL
+                                DELETE FROM sales_order_detail WHERE header_id = @HeaderId;
+                            IF OBJECT_ID('sales_order_header', 'U') IS NOT NULL
+                                DELETE FROM sales_order_header WHERE id = @HeaderId;";
+                    }
+                    else if (string.Equals(docType, "Purchase Order", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sql = @"
+                            IF OBJECT_ID('SOL_PURCHASE_ORDER_DETAIL', 'U') IS NOT NULL
+                                DELETE FROM SOL_PURCHASE_ORDER_DETAIL WHERE SOL_HEADER_ID = @HeaderId;
+                            IF OBJECT_ID('SOL_PURCHASE_ORDER_HEADER', 'U') IS NOT NULL
+                                DELETE FROM SOL_PURCHASE_ORDER_HEADER WHERE SOL_ID = @HeaderId;";
+                    }
+                    else
+                    {
+                        errorMessage = "Tipe dokumen tidak didukung: " + docType;
+                        return false;
+                    }
+
+                    // Hapus juga catatan riwayat sync/error terkait transaksi ini jika ada nomor transaksi
+                    sql += @"
+                        IF OBJECT_ID('TBL_SYNC_HISTORY', 'U') IS NOT NULL
+                        BEGIN
+                            IF @DocEntry <> '' DELETE FROM TBL_SYNC_HISTORY WHERE DocType = @DocType AND DocEntry = @DocEntry;
+                            IF @WebTxNumber <> '' DELETE FROM TBL_SYNC_HISTORY WHERE DocType = @DocType AND DocEntry = @WebTxNumber;
+                        END
+
+                        IF OBJECT_ID('TBL_SYNC_ERROR', 'U') IS NOT NULL
+                        BEGIN
+                            IF @DocEntry <> '' DELETE FROM TBL_SYNC_ERROR WHERE DocType = @DocType AND DocEntry = @DocEntry;
+                            IF @WebTxNumber <> '' DELETE FROM TBL_SYNC_ERROR WHERE DocType = @DocType AND DocEntry = @WebTxNumber;
+                        END";
+
+                    using (var cmd = new SqlCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@HeaderId", headerId);
+                        cmd.Parameters.AddWithValue("@DocType", docType ?? "");
+                        cmd.Parameters.AddWithValue("@WebTxNumber", webTxNumber ?? "");
+                        cmd.Parameters.AddWithValue("@DocEntry", docEntry ?? "");
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+        #endregion
     }
 }

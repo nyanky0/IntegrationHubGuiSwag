@@ -26,7 +26,10 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.exportProfilesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.importProfilesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(this.components);
-                        this.schedulerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.menuItemViewDetail = new System.Windows.Forms.ToolStripMenuItem();
+            this.separatorDelete = new System.Windows.Forms.ToolStripSeparator();
+            this.menuItemDeleteRow = new System.Windows.Forms.ToolStripMenuItem();
+            this.schedulerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
                         this.tabControl1 = new System.Windows.Forms.TabControl();
             this.tabsync = new System.Windows.Forms.TabPage();
             this.grpBox1 = new System.Windows.Forms.GroupBox();
@@ -63,6 +66,20 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.lblStgFrom = new System.Windows.Forms.Label();
             this.dgvlLogData = new System.Windows.Forms.DataGridView();
             this.label8 = new System.Windows.Forms.Label();
+            this.lblStagingDb = new System.Windows.Forms.Label();
+            this.tabDebug = new System.Windows.Forms.TabPage();
+            this.grpBoxDebug = new System.Windows.Forms.GroupBox();
+            this.lblDebugInfo = new System.Windows.Forms.Label();
+            this.grpBoxTxStats = new System.Windows.Forms.GroupBox();
+            this.lblStatSO = new System.Windows.Forms.Label();
+            this.lblStatPO = new System.Windows.Forms.Label();
+            this.lblStatLog = new System.Windows.Forms.Label();
+            this.lblStatTotal = new System.Windows.Forms.Label();
+            this.btnRefreshStats = new System.Windows.Forms.Button();
+            this.grpBoxDangerZone = new System.Windows.Forms.GroupBox();
+            this.lblDangerWarning = new System.Windows.Forms.Label();
+            this.btnDeleteAllTx = new System.Windows.Forms.Button();
+            this.chkEnableRowDelete = new System.Windows.Forms.CheckBox();
             this.menuStrip1.SuspendLayout();
             this.tabControl1.SuspendLayout();
             this.tabsync.SuspendLayout();
@@ -72,6 +89,10 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             ((System.ComponentModel.ISupportInitialize)(this.dgvPendingQueue)).BeginInit();
             this.tablog.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dgvlLogData)).BeginInit();
+            this.tabDebug.SuspendLayout();
+            this.grpBoxDebug.SuspendLayout();
+            this.grpBoxTxStats.SuspendLayout();
+            this.grpBoxDangerZone.SuspendLayout();
             this.SuspendLayout();
             // 
             // menuStrip1
@@ -122,14 +143,39 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // contextMenuStrip1
             // 
             this.contextMenuStrip1.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.menuItemViewDetail,
+            this.separatorDelete,
+            this.menuItemDeleteRow});
             this.contextMenuStrip1.Name = "contextMenuStrip1";
-            this.contextMenuStrip1.Size = new System.Drawing.Size(61, 4);
+            this.contextMenuStrip1.Size = new System.Drawing.Size(225, 58);
+            // 
+            // menuItemViewDetail
+            // 
+            this.menuItemViewDetail.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.menuItemViewDetail.Name = "menuItemViewDetail";
+            this.menuItemViewDetail.Size = new System.Drawing.Size(224, 24);
+            this.menuItemViewDetail.Text = "Lihat Detail Transaksi";
+            // 
+            // separatorDelete
+            // 
+            this.separatorDelete.Name = "separatorDelete";
+            this.separatorDelete.Size = new System.Drawing.Size(221, 6);
+            // 
+            // menuItemDeleteRow
+            // 
+            this.menuItemDeleteRow.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.menuItemDeleteRow.ForeColor = System.Drawing.Color.Firebrick;
+            this.menuItemDeleteRow.Name = "menuItemDeleteRow";
+            this.menuItemDeleteRow.Size = new System.Drawing.Size(224, 24);
+            this.menuItemDeleteRow.Text = "Hapus Transaksi Ini (Delete)";
             // 
             // tabControl1
             // 
             this.tabControl1.Controls.Add(this.tabsync);
             this.tabControl1.Controls.Add(this.tabPending);
             this.tabControl1.Controls.Add(this.tablog);
+            this.tabControl1.Controls.Add(this.tabDebug);
             this.tabControl1.Location = new System.Drawing.Point(12, 76);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
@@ -398,6 +444,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.dgvPendingQueue.RowHeadersWidth = 51;
             this.dgvPendingQueue.Size = new System.Drawing.Size(827, 331);
             this.dgvPendingQueue.TabIndex = 35;
+            this.dgvPendingQueue.ContextMenuStrip = this.contextMenuStrip1;
             // 
             // tablog
             // 
@@ -563,6 +610,161 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.dgvlLogData.RowHeadersWidth = 51;
             this.dgvlLogData.Size = new System.Drawing.Size(827, 331);
             this.dgvlLogData.TabIndex = 16;
+            this.dgvlLogData.ContextMenuStrip = this.contextMenuStrip1;
+            // 
+            // tabDebug
+            // 
+            this.tabDebug.Controls.Add(this.grpBoxDebug);
+            this.tabDebug.Location = new System.Drawing.Point(4, 25);
+            this.tabDebug.Name = "tabDebug";
+            this.tabDebug.Padding = new System.Windows.Forms.Padding(3);
+            this.tabDebug.Size = new System.Drawing.Size(893, 445);
+            this.tabDebug.TabIndex = 3;
+            this.tabDebug.Text = "Debug";
+            this.tabDebug.UseVisualStyleBackColor = true;
+            // 
+            // grpBoxDebug
+            // 
+            this.grpBoxDebug.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpBoxDebug.Controls.Add(this.lblDebugInfo);
+            this.grpBoxDebug.Controls.Add(this.grpBoxTxStats);
+            this.grpBoxDebug.Controls.Add(this.grpBoxDangerZone);
+            this.grpBoxDebug.Location = new System.Drawing.Point(8, 12);
+            this.grpBoxDebug.Margin = new System.Windows.Forms.Padding(4);
+            this.grpBoxDebug.Name = "grpBoxDebug";
+            this.grpBoxDebug.Padding = new System.Windows.Forms.Padding(4);
+            this.grpBoxDebug.Size = new System.Drawing.Size(875, 420);
+            this.grpBoxDebug.TabIndex = 0;
+            this.grpBoxDebug.TabStop = false;
+            this.grpBoxDebug.Text = "Panel Debug & Maintenance Database";
+            // 
+            // lblDebugInfo
+            // 
+            this.lblDebugInfo.AutoSize = true;
+            this.lblDebugInfo.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblDebugInfo.ForeColor = System.Drawing.Color.DimGray;
+            this.lblDebugInfo.Location = new System.Drawing.Point(15, 28);
+            this.lblDebugInfo.Name = "lblDebugInfo";
+            this.lblDebugInfo.Size = new System.Drawing.Size(560, 17);
+            this.lblDebugInfo.TabIndex = 0;
+            this.lblDebugInfo.Text = "Tab ini digunakan khusus untuk proses pengujian (debugging) dan pemeliharaan database staging.";
+            // 
+            // grpBoxTxStats
+            // 
+            this.grpBoxTxStats.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpBoxTxStats.Controls.Add(this.lblStatSO);
+            this.grpBoxTxStats.Controls.Add(this.lblStatPO);
+            this.grpBoxTxStats.Controls.Add(this.lblStatLog);
+            this.grpBoxTxStats.Controls.Add(this.lblStatTotal);
+            this.grpBoxTxStats.Controls.Add(this.btnRefreshStats);
+            this.grpBoxTxStats.Location = new System.Drawing.Point(15, 60);
+            this.grpBoxTxStats.Name = "grpBoxTxStats";
+            this.grpBoxTxStats.Size = new System.Drawing.Size(840, 155);
+            this.grpBoxTxStats.TabIndex = 1;
+            this.grpBoxTxStats.TabStop = false;
+            this.grpBoxTxStats.Text = "Ringkasan Transaksi Database Staging Saat Ini";
+            // 
+            // lblStatSO
+            // 
+            this.lblStatSO.AutoSize = true;
+            this.lblStatSO.Location = new System.Drawing.Point(15, 30);
+            this.lblStatSO.Name = "lblStatSO";
+            this.lblStatSO.Size = new System.Drawing.Size(120, 16);
+            this.lblStatSO.TabIndex = 0;
+            this.lblStatSO.Text = "• Sales Order: -";
+            // 
+            // lblStatPO
+            // 
+            this.lblStatPO.AutoSize = true;
+            this.lblStatPO.Location = new System.Drawing.Point(15, 58);
+            this.lblStatPO.Name = "lblStatPO";
+            this.lblStatPO.Size = new System.Drawing.Size(135, 16);
+            this.lblStatPO.TabIndex = 1;
+            this.lblStatPO.Text = "• Purchase Order: -";
+            // 
+            // lblStatLog
+            // 
+            this.lblStatLog.AutoSize = true;
+            this.lblStatLog.Location = new System.Drawing.Point(15, 86);
+            this.lblStatLog.Name = "lblStatLog";
+            this.lblStatLog.Size = new System.Drawing.Size(160, 16);
+            this.lblStatLog.TabIndex = 2;
+            this.lblStatLog.Text = "• Riwayat Sync / Error: -";
+            // 
+            // lblStatTotal
+            // 
+            this.lblStatTotal.AutoSize = true;
+            this.lblStatTotal.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblStatTotal.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(0)))), ((int)(((byte)(104)))), ((int)(((byte)(168)))));
+            this.lblStatTotal.Location = new System.Drawing.Point(15, 118);
+            this.lblStatTotal.Name = "lblStatTotal";
+            this.lblStatTotal.Size = new System.Drawing.Size(250, 18);
+            this.lblStatTotal.TabIndex = 3;
+            this.lblStatTotal.Text = "• Total Dokumen Transaksi: -";
+            // 
+            // btnRefreshStats
+            // 
+            this.btnRefreshStats.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnRefreshStats.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.btnRefreshStats.Location = new System.Drawing.Point(645, 26);
+            this.btnRefreshStats.Name = "btnRefreshStats";
+            this.btnRefreshStats.Size = new System.Drawing.Size(180, 32);
+            this.btnRefreshStats.TabIndex = 4;
+            this.btnRefreshStats.Text = "Refresh Jumlah Data";
+            this.btnRefreshStats.UseVisualStyleBackColor = true;
+            // 
+            // grpBoxDangerZone
+            // 
+            this.grpBoxDangerZone.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpBoxDangerZone.Controls.Add(this.lblDangerWarning);
+            this.grpBoxDangerZone.Controls.Add(this.btnDeleteAllTx);
+            this.grpBoxDangerZone.Controls.Add(this.chkEnableRowDelete);
+            this.grpBoxDangerZone.Location = new System.Drawing.Point(15, 230);
+            this.grpBoxDangerZone.Name = "grpBoxDangerZone";
+            this.grpBoxDangerZone.Size = new System.Drawing.Size(840, 160);
+            this.grpBoxDangerZone.TabIndex = 2;
+            this.grpBoxDangerZone.TabStop = false;
+            this.grpBoxDangerZone.Text = "Tindakan Khusus (Danger Zone)";
+            // 
+            // lblDangerWarning
+            // 
+            this.lblDangerWarning.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.lblDangerWarning.ForeColor = System.Drawing.Color.Firebrick;
+            this.lblDangerWarning.Location = new System.Drawing.Point(15, 25);
+            this.lblDangerWarning.Name = "lblDangerWarning";
+            this.lblDangerWarning.Size = new System.Drawing.Size(810, 48);
+            this.lblDangerWarning.TabIndex = 0;
+            this.lblDangerWarning.Text = "PERINGATAN: Tombol di bawah ini akan melakukan PENGHAPUSAN TOTAL seluruh data transaksi dari staging database (Sales Order, Purchase Order, dan Riwayat Sync/Error). Seluruh transaksi akan hilang dan reset menjadi 0.";
+            // 
+            // btnDeleteAllTx
+            // 
+            this.btnDeleteAllTx.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(200)))), ((int)(((byte)(60)))), ((int)(((byte)(60)))));
+            this.btnDeleteAllTx.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnDeleteAllTx.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.btnDeleteAllTx.ForeColor = System.Drawing.Color.White;
+            this.btnDeleteAllTx.Location = new System.Drawing.Point(15, 85);
+            this.btnDeleteAllTx.Name = "btnDeleteAllTx";
+            this.btnDeleteAllTx.Size = new System.Drawing.Size(320, 48);
+            this.btnDeleteAllTx.TabIndex = 1;
+            this.btnDeleteAllTx.Text = "Hapus Total Transaksi (Reset ke 0)";
+            this.btnDeleteAllTx.UseVisualStyleBackColor = false;
+            // 
+            // chkEnableRowDelete
+            // 
+            this.chkEnableRowDelete.AutoSize = true;
+            this.chkEnableRowDelete.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.chkEnableRowDelete.ForeColor = System.Drawing.Color.DarkRed;
+            this.chkEnableRowDelete.Location = new System.Drawing.Point(360, 99);
+            this.chkEnableRowDelete.Name = "chkEnableRowDelete";
+            this.chkEnableRowDelete.Size = new System.Drawing.Size(445, 21);
+            this.chkEnableRowDelete.TabIndex = 2;
+            this.chkEnableRowDelete.Text = "Aktifkan Opsi Hapus Baris (Klik Kanan di Daftar Log Transaksi)";
+            this.chkEnableRowDelete.UseVisualStyleBackColor = true;
             // 
             // label8
             // 
@@ -573,11 +775,21 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.label8.TabIndex = 4;
             this.label8.Text = "Profile Active";
             // 
+            // lblStagingDb
+            // 
+            this.lblStagingDb.AutoSize = true;
+            this.lblStagingDb.Location = new System.Drawing.Point(220, 40);
+            this.lblStagingDb.Name = "lblStagingDb";
+            this.lblStagingDb.Size = new System.Drawing.Size(95, 16);
+            this.lblStagingDb.TabIndex = 5;
+            this.lblStagingDb.Text = "Staging DB: -";
+            // 
             // FormMain
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(936, 595);
+            this.Controls.Add(this.lblStagingDb);
             this.Controls.Add(this.label8);
             this.Controls.Add(this.tabControl1);
             this.Controls.Add(this.menuStrip1);
@@ -601,6 +813,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.tablog.ResumeLayout(false);
             this.tablog.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dgvlLogData)).EndInit();
+            this.tabDebug.ResumeLayout(false);
+            this.grpBoxDebug.ResumeLayout(false);
+            this.grpBoxDebug.PerformLayout();
+            this.grpBoxTxStats.ResumeLayout(false);
+            this.grpBoxTxStats.PerformLayout();
+            this.grpBoxDangerZone.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -614,10 +832,26 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private System.Windows.Forms.ToolStripMenuItem importProfilesToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem schedulerToolStripMenuItem;
         private System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
+        internal System.Windows.Forms.ToolStripMenuItem menuItemViewDetail;
+        internal System.Windows.Forms.ToolStripSeparator separatorDelete;
+        internal System.Windows.Forms.ToolStripMenuItem menuItemDeleteRow;
         private System.Windows.Forms.TabControl tabControl1;
         private System.Windows.Forms.TabPage tabsync;
         private System.Windows.Forms.TabPage tabPending;
         private System.Windows.Forms.TabPage tablog;
+        private System.Windows.Forms.TabPage tabDebug;
+        internal System.Windows.Forms.GroupBox grpBoxDebug;
+        private System.Windows.Forms.Label lblDebugInfo;
+        internal System.Windows.Forms.GroupBox grpBoxTxStats;
+        private System.Windows.Forms.Label lblStatSO;
+        private System.Windows.Forms.Label lblStatPO;
+        private System.Windows.Forms.Label lblStatLog;
+        private System.Windows.Forms.Label lblStatTotal;
+        internal System.Windows.Forms.Button btnRefreshStats;
+        internal System.Windows.Forms.GroupBox grpBoxDangerZone;
+        private System.Windows.Forms.Label lblDangerWarning;
+        internal System.Windows.Forms.Button btnDeleteAllTx;
+        internal System.Windows.Forms.CheckBox chkEnableRowDelete;
 
         internal System.Windows.Forms.CheckBox chkSelectAllPending;
         private System.Windows.Forms.Label lblPendingFilterInfo;
@@ -653,5 +887,6 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private System.Windows.Forms.Label label7;
         internal System.Windows.Forms.CheckBox chkAll1;
         private System.Windows.Forms.Label label8;
+        internal System.Windows.Forms.Label lblStagingDb;
     }
 }

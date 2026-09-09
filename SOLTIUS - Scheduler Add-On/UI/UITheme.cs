@@ -63,6 +63,19 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             return btn;
         }
 
+        /// <summary>Tombol aksi berbahaya / destruktif (merah solid, teks putih).</summary>
+        public static Button ApplyDanger(Button btn)
+        {
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderSize = 0;
+            btn.BackColor = Danger;
+            btn.ForeColor = Color.White;
+            btn.Font = FontButton;
+            btn.Cursor = Cursors.Hand;
+            btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(160, 40, 40);
+            return btn;
+        }
+
         /// <summary>TextBox standar: putih, border abu, padding nyaman.</summary>
         public static TextBox ApplyTextBox(TextBox txt)
         {

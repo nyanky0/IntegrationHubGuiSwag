@@ -51,6 +51,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             SetupPendingGridColumns();
             RefreshGrid();
             RefreshPendingGrid();
+            RefreshDebugSummary();
+            UpdateActiveProfileLabel();
         }
 
         private void SetupLogGridColumns()
@@ -250,6 +252,11 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.passwordToolStripMenuItem.Click += passwordToolStripMenuItem_Click;
             this.schedulerToolStripMenuItem.Click += schedulerToolStripMenuItem_Click;
             this.label8.Click += (s, e) => configurationToolStripMenuItem_Click(null, null);
+            if (this.lblStagingDb != null)
+            {
+                this.lblStagingDb.Cursor = Cursors.Hand;
+                this.lblStagingDb.Click += (s, e) => configurationToolStripMenuItem_Click(null, null);
+            }
 
             this.tabControl1.SelectedIndexChanged += tabControl1_SelectedIndexChanged;
 
@@ -274,6 +281,17 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 this.dgvPendingQueue.CellDoubleClick += dgvPendingQueue_CellDoubleClick;
                 this.dgvPendingQueue.CellFormatting += dgvPendingQueue_CellFormatting;
             }
+
+            // Context Menu Klik Kanan pada Grid
+            if (dgvlLogData != null) this.dgvlLogData.CellMouseDown += Grid_CellMouseDown;
+            if (dgvPendingQueue != null) this.dgvPendingQueue.CellMouseDown += Grid_CellMouseDown;
+            if (contextMenuStrip1 != null) this.contextMenuStrip1.Opening += contextMenuStrip1_Opening;
+            if (menuItemViewDetail != null) this.menuItemViewDetail.Click += menuItemViewDetail_Click;
+            if (menuItemDeleteRow != null) this.menuItemDeleteRow.Click += menuItemDeleteRow_Click;
+
+            // Kontrol di Tab Debug
+            if (btnRefreshStats != null) this.btnRefreshStats.Click += (s, e) => RefreshDebugSummary();
+            if (btnDeleteAllTx != null) this.btnDeleteAllTx.Click += btnDeleteAllTx_Click;
         }
 
         #region PROFILE & DATABASE HELPERS
@@ -291,6 +309,82 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 label8.ForeColor = Color.Red;
             }
             label8.Refresh();
+
+            UpdateStagingDbLabel();
+        }
+
+        private void UpdateStagingDbLabel()
+        {
+            if (lblStagingDb == null) return;
+
+            // Posisikan lblStagingDb di sebelah kanan label8 dengan jarak 25px
+            lblStagingDb.Left = label8.Right + 25;
+            lblStagingDb.Top = label8.Top;
+
+            AppConfig config = _configService.GetActiveConfiguration();
+            if (config == null || string.IsNullOrWhiteSpace(config.ExternalDBName))
+            {
+                lblStagingDb.Text = "Staging DB: None";
+                lblStagingDb.ForeColor = Color.Gray;
+                lblStagingDb.Refresh();
+                return;
+            }
+
+            string dbType = !string.IsNullOrWhiteSpace(config.ExternalDBType) ? config.ExternalDBType : "SQLServer";
+            string dbName = config.ExternalDBName;
+            string dbServer = config.ExternalDBServer ?? "localhost";
+            if (!string.IsNullOrWhiteSpace(config.ExternalDBPort) && config.ExternalDBPort != "0" && config.ExternalDBPort != "1433")
+                dbServer += ":" + config.ExternalDBPort;
+
+            // Tampilkan info awal DB terlebih dahulu
+            string baseInfo = $"Staging DB: {dbName} ({dbType} @ {dbServer})";
+            lblStagingDb.Text = $"{baseInfo} (Connecting...)";
+            lblStagingDb.ForeColor = Color.FromArgb(70, 80, 95);
+            lblStagingDb.Refresh();
+
+            // Jalankan pengecekan koneksi secara asynchronous di background
+            string baseConnStr = ConfigService.BuildStagingConnectionString(config);
+            Task.Run(() =>
+            {
+                bool isConnected = false;
+                if (!string.IsNullOrEmpty(baseConnStr))
+                {
+                    try
+                    {
+                        var builder = new System.Data.SqlClient.SqlConnectionStringBuilder(baseConnStr)
+                        {
+                            ConnectTimeout = 3
+                        };
+                        using (var conn = new System.Data.SqlClient.SqlConnection(builder.ConnectionString))
+                        {
+                            conn.Open();
+                            isConnected = (conn.State == System.Data.ConnectionState.Open);
+                        }
+                    }
+                    catch
+                    {
+                        isConnected = false;
+                    }
+                }
+
+                if (this.IsDisposed || !this.IsHandleCreated) return;
+
+                this.BeginInvoke((Action)(() =>
+                {
+                    if (this.IsDisposed) return;
+                    if (isConnected)
+                    {
+                        lblStagingDb.Text = $"{baseInfo} • Connected";
+                        lblStagingDb.ForeColor = Color.ForestGreen;
+                    }
+                    else
+                    {
+                        lblStagingDb.Text = $"{baseInfo} • Disconnected";
+                        lblStagingDb.ForeColor = Color.Crimson;
+                    }
+                    lblStagingDb.Refresh();
+                }));
+            });
         }
 
         private DatabaseService GetDatabaseService()
@@ -386,6 +480,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 LoadLogFromDatabase();
             else if (tabControl1.SelectedTab == tabPending)
                 RefreshPendingGrid();
+            else if (tabControl1.SelectedTab == tabDebug)
+                RefreshDebugSummary();
         }
 
         #region PENDING / RETRY QUEUE ACTIONS
@@ -1249,6 +1345,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // Terapkan theme konsisten
             ApplyTheme();
 
+            // Perbarui label profil & database staging saat form dimuat
+            UpdateActiveProfileLabel();
+
             // Coba kirim ulang payload yang gagal dikirim ke Web API saat ganti profil
             try
             {
@@ -1284,6 +1383,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             UITheme.ApplyCombo(cbFunction);
             UITheme.ApplyTextBox(txtSearchLog);
             UITheme.ApplyLabel(label8, muted: true);
+            if (lblStagingDb != null) UITheme.ApplyLabel(lblStagingDb, muted: true);
 
             UITheme.ApplyCheck(chkDryRun);
             UITheme.ApplyCheck(chkSO);
@@ -1292,7 +1392,328 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             UITheme.ApplyCheck(chkLogData);
             UITheme.ApplyCheck(chkAll1);
 
+            // Theme kontrol Tab Debug
+            if (grpBoxDebug != null) UITheme.ApplyGroup(grpBoxDebug);
+            if (grpBoxTxStats != null) UITheme.ApplyGroup(grpBoxTxStats);
+            if (grpBoxDangerZone != null) UITheme.ApplyGroup(grpBoxDangerZone);
+            if (btnRefreshStats != null) UITheme.ApplySecondary(btnRefreshStats);
+            if (btnDeleteAllTx != null) UITheme.ApplyDanger(btnDeleteAllTx);
+            if (chkEnableRowDelete != null) UITheme.ApplyCheck(chkEnableRowDelete);
+
             tabControl1.SelectedTab = tabsync;
         }
+
+        #region DEBUG & MAINTENANCE ACTIONS
+        private void RefreshDebugSummary()
+        {
+            var dbService = GetDatabaseService();
+            if (dbService == null)
+            {
+                if (lblStatSO != null) lblStatSO.Text = "• Sales Order: Profil / DB belum aktif";
+                if (lblStatPO != null) lblStatPO.Text = "• Purchase Order: Profil / DB belum aktif";
+                if (lblStatLog != null) lblStatLog.Text = "• Riwayat Sync / Error: Profil / DB belum aktif";
+                if (lblStatTotal != null)
+                {
+                    lblStatTotal.Text = "• Total Dokumen Transaksi: Database tidak terhubung";
+                    lblStatTotal.ForeColor = Color.DarkGray;
+                }
+                return;
+            }
+
+            try
+            {
+                var summary = dbService.GetTransactionSummary();
+                if (lblStatSO != null)
+                    lblStatSO.Text = $"• Sales Order: {summary.SalesOrderHeaderCount} Dokumen Header, {summary.SalesOrderDetailCount} Baris Detail";
+                if (lblStatPO != null)
+                    lblStatPO.Text = $"• Purchase Order: {summary.PurchaseOrderHeaderCount} Dokumen Header, {summary.PurchaseOrderDetailCount} Baris Detail";
+                if (lblStatLog != null)
+                    lblStatLog.Text = $"• Riwayat Sync / Error: {summary.SyncHistoryCount} Riwayat History, {summary.SyncErrorCount} Riwayat Error";
+
+                if (lblStatTotal != null)
+                {
+                    lblStatTotal.Text = $"• Total Dokumen Transaksi: {summary.TotalTransactions} Dokumen ({summary.TotalRecords} Total Semua Baris)";
+                    if (summary.TotalTransactions == 0)
+                    {
+                        lblStatTotal.ForeColor = Color.FromArgb(40, 130, 70); // Green
+                        lblStatTotal.Text += " (KOSONG / 0)";
+                    }
+                    else
+                    {
+                        lblStatTotal.ForeColor = Color.FromArgb(200, 60, 60); // Red
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (lblStatTotal != null)
+                {
+                    lblStatTotal.Text = "• Gagal membaca status transaksi: " + ex.Message;
+                    lblStatTotal.ForeColor = Color.Red;
+                }
+            }
+        }
+
+        private void btnDeleteAllTx_Click(object sender, EventArgs e)
+        {
+            var dbService = GetDatabaseService();
+            if (dbService == null)
+            {
+                MessageBox.Show("Koneksi database staging tidak tersedia. Pastikan profil aktif telah dikonfigurasi dengan benar.", "Koneksi Tidak Tersedia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var confirmResult = MessageBox.Show(
+                "PERINGATAN KERAS!\n\n" +
+                "Apakah Anda yakin ingin melakukan PENGHAPUSAN TOTAL seluruh data transaksi di Database Staging?\n\n" +
+                "Tindakan ini akan menghapus secara permanen:\n" +
+                "• Seluruh data Sales Order (Header & Detail)\n" +
+                "• Seluruh data Purchase Order (Header & Detail)\n" +
+                "• Seluruh data Riwayat Sinkronisasi (TBL_SYNC_HISTORY & TBL_SYNC_ERROR)\n" +
+                "• Mereset ID urutan penomoran transaksi menjadi 0\n\n" +
+                "Semua transaksi akan hilang dan kembali menjadi 0.\nData yang dihapus TIDAK DAPAT dikembalikan!\n\n" +
+                "Lanjutkan proses penghapusan?",
+                "Konfirmasi Hapus Total Transaksi",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            if (confirmResult != DialogResult.Yes) return;
+
+            var finalConfirm = MessageBox.Show(
+                "KONFIRMASI TERAKHIR!\n\n" +
+                "Semua transaksi di database staging akan DIHAPUS BERSIH menjadi 0.\n\n" +
+                "Klik 'Yes' untuk memulai penghapusan sekarang.",
+                "Konfirmasi Terakhir",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Stop,
+                MessageBoxDefaultButton.Button2);
+
+            if (finalConfirm != DialogResult.Yes) return;
+
+            try
+            {
+                Cursor.Current = Cursors.WaitCursor;
+
+                if (dbService.DeleteAllTransactions(out int totalDeleted, out string error))
+                {
+                    // Bersihkan cache in-memory
+                    masterLogList?.Clear();
+                    masterPendingList?.Clear();
+
+                    // Refresh tampilan grid
+                    RefreshGrid();
+                    RefreshPendingGrid();
+
+                    // Refresh ringkasan di tab Debug
+                    RefreshDebugSummary();
+
+                    MessageBox.Show(
+                        $"Penghapusan total transaksi berhasil dilaksanakan!\n\n" +
+                        $"• Total baris data yang dibersihkan: {totalDeleted} baris.\n" +
+                        $"• Total transaksi saat ini: 0.\n\n" +
+                        "Seluruh tabel transaksi telah dikosongkan.",
+                        "Penghapusan Berhasil",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        "Gagal melakukan penghapusan transaksi:\n" + error,
+                        "Error Penghapusan",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Terjadi kesalahan saat menghapus transaksi: " + ex.Message,
+                    "Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor.Current = Cursors.Default;
+            }
+        }
+
+        #region CONTEXT MENU & DELETE PER ROW
+        private void Grid_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right && e.RowIndex >= 0)
+            {
+                var grid = sender as DataGridView;
+                if (grid != null)
+                {
+                    grid.ClearSelection();
+                    grid.Rows[e.RowIndex].Selected = true;
+                }
+            }
+        }
+
+        private void contextMenuStrip1_Opening(object sender, CancelEventArgs e)
+        {
+            var grid = contextMenuStrip1.SourceControl as DataGridView;
+            if (grid == null || grid.SelectedRows.Count == 0 || grid.SelectedRows[0].Index < 0)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            // Opsi Delete hanya ditampilkan jika user telah mencentang checklist di tab Debug
+            bool allowDelete = chkEnableRowDelete != null && chkEnableRowDelete.Checked;
+            menuItemDeleteRow.Visible = allowDelete;
+            separatorDelete.Visible = allowDelete;
+        }
+
+        private void menuItemViewDetail_Click(object sender, EventArgs e)
+        {
+            var grid = contextMenuStrip1.SourceControl as DataGridView;
+            if (grid == null || grid.SelectedRows.Count == 0) return;
+
+            var dbService = GetDatabaseService();
+            if (dbService == null) return;
+
+            DocumentHeaderLogModel doc = null;
+            if (grid == dgvlLogData)
+            {
+                doc = grid.SelectedRows[0].DataBoundItem as DocumentHeaderLogModel;
+            }
+            else if (grid == dgvPendingQueue)
+            {
+                var pending = grid.SelectedRows[0].DataBoundItem as PendingQueueDocModel;
+                if (pending != null)
+                {
+                    doc = new DocumentHeaderLogModel
+                    {
+                        HeaderId = pending.HeaderId,
+                        DocType = pending.DocType,
+                        WebTxNumber = pending.WebTxNumber,
+                        CardCode = pending.CardCode,
+                        CardName = pending.CardName,
+                        DocDate = pending.DocDate,
+                        DocDueDate = pending.DocDueDate,
+                        Status = pending.Status,
+                        CreatedAt = pending.CreatedAt,
+                        Remarks = pending.Remarks,
+                        ErrorMessage = pending.ErrorMessage,
+                        UdfDataJson = pending.UdfDataJson
+                    };
+                }
+            }
+
+            if (doc != null)
+            {
+                using (var frmDetail = new FormDocumentDetail(doc, dbService))
+                {
+                    frmDetail.ShowDialog(this);
+                }
+            }
+        }
+
+        private void menuItemDeleteRow_Click(object sender, EventArgs e)
+        {
+            if (chkEnableRowDelete == null || !chkEnableRowDelete.Checked)
+            {
+                MessageBox.Show(
+                    "Fungsi hapus per baris dinonaktifkan.\n\nUntuk mengaktifkannya, silakan centang opsi di tab 'Debug'.",
+                    "Fitur Belum Aktif", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var grid = contextMenuStrip1.SourceControl as DataGridView;
+            if (grid == null || grid.SelectedRows.Count == 0) return;
+
+            var dbService = GetDatabaseService();
+            if (dbService == null)
+            {
+                MessageBox.Show("Koneksi database staging tidak tersedia.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string docType = "";
+            long headerId = 0;
+            string webTx = "";
+            string docEntry = "";
+            string cardInfo = "";
+            DateTime docDate = DateTime.MinValue;
+
+            if (grid == dgvlLogData)
+            {
+                var logDoc = grid.SelectedRows[0].DataBoundItem as DocumentHeaderLogModel;
+                if (logDoc == null) return;
+
+                docType = logDoc.DocType;
+                headerId = logDoc.HeaderId;
+                webTx = logDoc.WebTxNumber;
+                docEntry = logDoc.DocEntry;
+                cardInfo = $"{logDoc.CardCode} - {logDoc.CardName}".Trim(' ', '-');
+                docDate = logDoc.DocDate;
+            }
+            else if (grid == dgvPendingQueue)
+            {
+                var pendingDoc = grid.SelectedRows[0].DataBoundItem as PendingQueueDocModel;
+                if (pendingDoc == null) return;
+
+                docType = pendingDoc.DocType;
+                headerId = pendingDoc.HeaderId;
+                webTx = pendingDoc.WebTxNumber;
+                docEntry = "";
+                cardInfo = $"{pendingDoc.CardCode} - {pendingDoc.CardName}".Trim(' ', '-');
+                docDate = pendingDoc.DocDate;
+            }
+
+            if (string.IsNullOrEmpty(docType) || headerId <= 0) return;
+
+            var confirm = MessageBox.Show(
+                $"Apakah Anda yakin ingin menghapus transaksi {docType} terpilih ini?\n\n" +
+                $"• Header ID: {headerId}\n" +
+                $"• Web Tx Number: {(string.IsNullOrEmpty(webTx) ? "-" : webTx)}\n" +
+                $"• Partner: {(string.IsNullOrEmpty(cardInfo) ? "-" : cardInfo)}\n" +
+                $"• Doc Date: {(docDate != DateTime.MinValue ? docDate.ToString("yyyy-MM-dd") : "-")}\n\n" +
+                "Data transaksi ini akan dihapus permanen dari database staging!\nLanjutkan?",
+                "Konfirmasi Hapus Transaksi",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            if (confirm != DialogResult.Yes) return;
+
+            try
+            {
+                Cursor.Current = Cursors.WaitCursor;
+
+                if (dbService.DeleteSingleTransaction(docType, headerId, webTx, docEntry, out string err))
+                {
+                    // Refresh data list & grid
+                    LoadLogFromDatabase();
+                    RefreshPendingGrid();
+                    RefreshDebugSummary();
+
+                    MessageBox.Show(
+                        $"Transaksi {docType} (ID: {headerId}) berhasil dihapus dari staging database.",
+                        "Berhasil Dihapus",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Gagal menghapus transaksi: " + err, "Error Penghapusan", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Terjadi error saat menghapus transaksi: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor.Current = Cursors.Default;
+            }
+        }
+        #endregion
+        #endregion
     }
 }
