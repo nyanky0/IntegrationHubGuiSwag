@@ -7,12 +7,13 @@ using System.Collections.Generic;
 namespace SOLTIUS_Scheduler_Add_On.Services
 {
     /// <summary>
-    /// Engine sinkronisasi Sales Order dari staging ke SAP, tanpa ketergantungan UI.
+    /// Engine sinkronisasi Stock Transfer / Packing List (OWTR) dari staging ke SAP B1, tanpa ketergantungan UI.
+    /// Mengikuti alur logistik packing list maritim Web App IBT.
     /// </summary>
-    public static class SalesOrderSyncRunner
+    public static class StockTransferSyncRunner
     {
         /// <summary>
-        /// Menjalankan sinkronisasi semua SO pending (process_status = 0).
+        /// Menjalankan sinkronisasi semua Stock Transfer pending (SOL_PROCESS_STATUS = 0).
         /// </summary>
         /// <returns>Jumlah dokumen yang gagal.</returns>
         public static int RunPendingSync(AppConfig config, bool isDryRun)
@@ -26,7 +27,7 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     "Staging hanya mendukung SQL Server. Profil aktif memakai tipe '" + config.ExternalDBType + "'.");
 
             var dbService = new DatabaseService(connString);
-            List<PendingSalesOrder> orders = dbService.LoadPendingSalesOrders();
+            List<PendingPurchaseOrder> orders = dbService.LoadPendingStockTransfers();
 
             if (orders.Count == 0) return 0;
 
@@ -38,10 +39,10 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
                 foreach (var order in orders)
                 {
-                    // --- Skip if retry limit exceeded ---
-                    if (dbService.IsRetryLimitExceeded(order.HeaderId))
+                    // Skip if retry limit exceeded
+                    if (dbService.IsStockTransferRetryLimitExceeded(order.HeaderId))
                     {
-                        dbService.MarkAsExceededRetryLimit(order.HeaderId);
+                        dbService.MarkStockTransferAsExceededRetryLimit(order.HeaderId);
                         LogSync(dbService, order, "Failed", null, "Skipped: max retry limit exceeded");
                         continue;
                     }
@@ -50,30 +51,45 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     {
                         if (isDryRun)
                         {
-                            LogSync(dbService, order, "Success", "DRY-RUN", "Validasi berhasil (Mode Simulasi)");
+                            LogSync(dbService, order, "Success", "DRY-RUN", "Validasi Stock Transfer berhasil (Mode Simulasi)");
                         }
                         else
                         {
-                            string docEntry = sapService.ExecuteSalesOrderSync(order);
+                            string docEntry = sapService.ExecuteStockTransferSync(order);
                             LogSync(dbService, order, "Success", docEntry, "-");
-                            dbService.UpdateSalesOrderStatus(order.HeaderId, 1);
+                            dbService.UpdateStockTransferStatus(order.HeaderId, 1, null, docEntry);
+
+                            // Asynchronous Webhook Callback ke Web Laravel
+                            try
+                            {
+                                var schedConfig = SchedulerConfig.Load();
+                                if (schedConfig.EnableWebhookCallback)
+                                {
+                                    WebhookCallbackService.SendDocEntryCallbackAsync(
+                                        schedConfig.WebhookUrl,
+                                        schedConfig.WebhookSecret,
+                                        "Stock Transfer",
+                                        docEntry,
+                                        docEntry,
+                                        order.WebTxNumber,
+                                        order.WebTxId
+                                    );
+                                }
+                            }
+                            catch { }
                         }
                     }
                     catch (Exception ex)
                     {
                         failedCount++;
 
-                        // Catat kegagalan. UpdateSalesOrderStatus(status=2) sekaligus
-                        // menaikkan retrycount di tabel staging.
-                        dbService.UpdateSalesOrderStatus(order.HeaderId, 2, ex.Message);
+                        dbService.UpdateStockTransferStatus(order.HeaderId, 2, ex.Message);
 
-                        // Setelah retrycount naik, cek apakah sudah tembus batas maksimal.
-                        // Kalau iya, langsung tandai dead-letter di cycle yang sama (bukan nunggu cycle berikutnya).
                         string errMsg = ex.Message;
-                        if (dbService.IsRetryLimitExceeded(order.HeaderId))
+                        if (dbService.IsStockTransferRetryLimitExceeded(order.HeaderId))
                         {
                             errMsg = "[DEAD-LETTER] " + ex.Message;
-                            dbService.MarkAsExceededRetryLimit(order.HeaderId);
+                            dbService.MarkStockTransferAsExceededRetryLimit(order.HeaderId);
                         }
 
                         LogSync(dbService, order, "Failed", null, errMsg);
@@ -84,16 +100,13 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             return failedCount;
         }
 
-        /// <summary>
-        /// Log sync result with UID. Multi-line: logs once per order (not per line).
-        /// </summary>
-        private static void LogSync(DatabaseService dbService, PendingSalesOrder order, string status, string docEntry, string errorMessage)
+        private static void LogSync(DatabaseService dbService, PendingPurchaseOrder order, string status, string docEntry, string errorMessage)
         {
             try
             {
                 var log = new SyncLogModel
                 {
-                    DocType = "Sales Order",
+                    DocType = "Stock Transfer",
                     DocEntry = docEntry ?? "",
                     CardCode = order.CardCode ?? "",
                     ItemCode = order.Lines.Count > 0 ? order.Lines[0].ItemCode : "",

@@ -39,10 +39,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.grpBox1_1 = new System.Windows.Forms.GroupBox();
             this.chkSL = new System.Windows.Forms.CheckBox();
             this.label6 = new System.Windows.Forms.Label();
-            this.chkSO = new System.Windows.Forms.CheckBox();
-            this.label3 = new System.Windows.Forms.Label();
             this.chkPO = new System.Windows.Forms.CheckBox();
             this.labelPO = new System.Windows.Forms.Label();
+            this.chkGRPO = new System.Windows.Forms.CheckBox();
+            this.labelGRPO = new System.Windows.Forms.Label();
+            this.chkTransfer = new System.Windows.Forms.CheckBox();
+            this.labelTransfer = new System.Windows.Forms.Label();
             this.chkLogData = new System.Windows.Forms.CheckBox();
             this.label7 = new System.Windows.Forms.Label();
             this.chkAll1 = new System.Windows.Forms.CheckBox();
@@ -71,8 +73,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.grpBoxDebug = new System.Windows.Forms.GroupBox();
             this.lblDebugInfo = new System.Windows.Forms.Label();
             this.grpBoxTxStats = new System.Windows.Forms.GroupBox();
-            this.lblStatSO = new System.Windows.Forms.Label();
             this.lblStatPO = new System.Windows.Forms.Label();
+            this.lblStatGRPO = new System.Windows.Forms.Label();
+            this.lblStatTransfer = new System.Windows.Forms.Label();
             this.lblStatLog = new System.Windows.Forms.Label();
             this.lblStatTotal = new System.Windows.Forms.Label();
             this.btnRefreshStats = new System.Windows.Forms.Button();
@@ -251,10 +254,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // 
             this.grpBox1_1.Controls.Add(this.chkSL);
             this.grpBox1_1.Controls.Add(this.label6);
+            this.grpBox1_1.Controls.Add(this.chkTransfer);
+            this.grpBox1_1.Controls.Add(this.labelTransfer);
+            this.grpBox1_1.Controls.Add(this.chkGRPO);
+            this.grpBox1_1.Controls.Add(this.labelGRPO);
             this.grpBox1_1.Controls.Add(this.chkPO);
             this.grpBox1_1.Controls.Add(this.labelPO);
-            this.grpBox1_1.Controls.Add(this.chkSO);
-            this.grpBox1_1.Controls.Add(this.label3);
             this.grpBox1_1.Location = new System.Drawing.Point(8, 20);
             this.grpBox1_1.Margin = new System.Windows.Forms.Padding(4);
             this.grpBox1_1.Name = "grpBox1_1";
@@ -264,36 +269,14 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.grpBox1_1.TabStop = false;
             this.grpBox1_1.Text = "Other to SAP B1";
             // 
-            // chkSO
-            // 
-            this.chkSO.AutoSize = true;
-            this.chkSO.Location = new System.Drawing.Point(8, 20);
-            this.chkSO.Margin = new System.Windows.Forms.Padding(4);
-            this.chkSO.Name = "chkSO";
-            this.chkSO.Size = new System.Drawing.Size(134, 20);
-            this.chkSO.TabIndex = 14;
-            this.chkSO.Text = "Sync Sales Order";
-            this.chkSO.UseVisualStyleBackColor = true;
-            // 
-            // label3
-            // 
-            this.label3.AutoSize = true;
-            this.label3.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label3.Location = new System.Drawing.Point(328, 20);
-            this.label3.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
-            this.label3.Name = "label3";
-            this.label3.Size = new System.Drawing.Size(59, 17);
-            this.label3.TabIndex = 15;
-            this.label3.Text = "-ORDR";
-            // 
             // chkPO
             // 
             this.chkPO.AutoSize = true;
-            this.chkPO.Location = new System.Drawing.Point(8, 48);
+            this.chkPO.Location = new System.Drawing.Point(8, 20);
             this.chkPO.Margin = new System.Windows.Forms.Padding(4);
             this.chkPO.Name = "chkPO";
             this.chkPO.Size = new System.Drawing.Size(155, 20);
-            this.chkPO.TabIndex = 16;
+            this.chkPO.TabIndex = 14;
             this.chkPO.Text = "Sync Purchase Order";
             this.chkPO.UseVisualStyleBackColor = true;
             // 
@@ -301,21 +284,65 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // 
             this.labelPO.AutoSize = true;
             this.labelPO.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.labelPO.Location = new System.Drawing.Point(328, 48);
+            this.labelPO.Location = new System.Drawing.Point(328, 20);
             this.labelPO.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.labelPO.Name = "labelPO";
             this.labelPO.Size = new System.Drawing.Size(59, 17);
-            this.labelPO.TabIndex = 17;
+            this.labelPO.TabIndex = 15;
             this.labelPO.Text = "-OPOR";
+            // 
+            // chkGRPO
+            // 
+            this.chkGRPO.AutoSize = true;
+            this.chkGRPO.Location = new System.Drawing.Point(8, 48);
+            this.chkGRPO.Margin = new System.Windows.Forms.Padding(4);
+            this.chkGRPO.Name = "chkGRPO";
+            this.chkGRPO.Size = new System.Drawing.Size(175, 20);
+            this.chkGRPO.TabIndex = 16;
+            this.chkGRPO.Text = "Sync Goods Receipt PO";
+            this.chkGRPO.UseVisualStyleBackColor = true;
+            // 
+            // labelGRPO
+            // 
+            this.labelGRPO.AutoSize = true;
+            this.labelGRPO.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelGRPO.Location = new System.Drawing.Point(328, 48);
+            this.labelGRPO.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.labelGRPO.Name = "labelGRPO";
+            this.labelGRPO.Size = new System.Drawing.Size(58, 17);
+            this.labelGRPO.TabIndex = 17;
+            this.labelGRPO.Text = "-OPDN";
+            // 
+            // chkTransfer
+            // 
+            this.chkTransfer.AutoSize = true;
+            this.chkTransfer.Location = new System.Drawing.Point(8, 76);
+            this.chkTransfer.Margin = new System.Windows.Forms.Padding(4);
+            this.chkTransfer.Name = "chkTransfer";
+            this.chkTransfer.Size = new System.Drawing.Size(148, 20);
+            this.chkTransfer.TabIndex = 18;
+            this.chkTransfer.Text = "Sync Stock Transfer";
+            this.chkTransfer.UseVisualStyleBackColor = true;
+            // 
+            // labelTransfer
+            // 
+            this.labelTransfer.AutoSize = true;
+            this.labelTransfer.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelTransfer.Location = new System.Drawing.Point(328, 76);
+            this.labelTransfer.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.labelTransfer.Name = "labelTransfer";
+            this.labelTransfer.Size = new System.Drawing.Size(61, 17);
+            this.labelTransfer.TabIndex = 19;
+            this.labelTransfer.Text = "-OWTR";
             // 
             // chkSL
             // 
             this.chkSL.AutoSize = true;
-            this.chkSL.Location = new System.Drawing.Point(8, 76);
+            this.chkSL.Location = new System.Drawing.Point(8, 104);
             this.chkSL.Margin = new System.Windows.Forms.Padding(4);
             this.chkSL.Name = "chkSL";
             this.chkSL.Size = new System.Drawing.Size(145, 20);
-            this.chkSL.TabIndex = 18;
+            this.chkSL.TabIndex = 20;
             this.chkSL.Text = "Sync Service Layer";
             this.chkSL.UseVisualStyleBackColor = true;
             // 
@@ -323,11 +350,11 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // 
             this.label6.AutoSize = true;
             this.label6.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label6.Location = new System.Drawing.Point(328, 76);
+            this.label6.Location = new System.Drawing.Point(328, 104);
             this.label6.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.label6.Name = "label6";
             this.label6.Size = new System.Drawing.Size(45, 17);
-            this.label6.TabIndex = 19;
+            this.label6.TabIndex = 21;
             this.label6.Text = "-OSL";
             // 
             // chkLogData
@@ -655,43 +682,53 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // 
             this.grpBoxTxStats.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.grpBoxTxStats.Controls.Add(this.lblStatSO);
             this.grpBoxTxStats.Controls.Add(this.lblStatPO);
+            this.grpBoxTxStats.Controls.Add(this.lblStatGRPO);
+            this.grpBoxTxStats.Controls.Add(this.lblStatTransfer);
             this.grpBoxTxStats.Controls.Add(this.lblStatLog);
             this.grpBoxTxStats.Controls.Add(this.lblStatTotal);
             this.grpBoxTxStats.Controls.Add(this.btnRefreshStats);
             this.grpBoxTxStats.Location = new System.Drawing.Point(15, 60);
             this.grpBoxTxStats.Name = "grpBoxTxStats";
-            this.grpBoxTxStats.Size = new System.Drawing.Size(840, 155);
+            this.grpBoxTxStats.Size = new System.Drawing.Size(840, 160);
             this.grpBoxTxStats.TabIndex = 1;
             this.grpBoxTxStats.TabStop = false;
             this.grpBoxTxStats.Text = "Ringkasan Transaksi Database Staging Saat Ini";
             // 
-            // lblStatSO
-            // 
-            this.lblStatSO.AutoSize = true;
-            this.lblStatSO.Location = new System.Drawing.Point(15, 30);
-            this.lblStatSO.Name = "lblStatSO";
-            this.lblStatSO.Size = new System.Drawing.Size(120, 16);
-            this.lblStatSO.TabIndex = 0;
-            this.lblStatSO.Text = "• Sales Order: -";
-            // 
             // lblStatPO
             // 
             this.lblStatPO.AutoSize = true;
-            this.lblStatPO.Location = new System.Drawing.Point(15, 58);
+            this.lblStatPO.Location = new System.Drawing.Point(15, 25);
             this.lblStatPO.Name = "lblStatPO";
             this.lblStatPO.Size = new System.Drawing.Size(135, 16);
-            this.lblStatPO.TabIndex = 1;
+            this.lblStatPO.TabIndex = 0;
             this.lblStatPO.Text = "• Purchase Order: -";
+            // 
+            // lblStatGRPO
+            // 
+            this.lblStatGRPO.AutoSize = true;
+            this.lblStatGRPO.Location = new System.Drawing.Point(15, 48);
+            this.lblStatGRPO.Name = "lblStatGRPO";
+            this.lblStatGRPO.Size = new System.Drawing.Size(145, 16);
+            this.lblStatGRPO.TabIndex = 1;
+            this.lblStatGRPO.Text = "• Goods Receipt PO: -";
+            // 
+            // lblStatTransfer
+            // 
+            this.lblStatTransfer.AutoSize = true;
+            this.lblStatTransfer.Location = new System.Drawing.Point(15, 71);
+            this.lblStatTransfer.Name = "lblStatTransfer";
+            this.lblStatTransfer.Size = new System.Drawing.Size(125, 16);
+            this.lblStatTransfer.TabIndex = 2;
+            this.lblStatTransfer.Text = "• Stock Transfer: -";
             // 
             // lblStatLog
             // 
             this.lblStatLog.AutoSize = true;
-            this.lblStatLog.Location = new System.Drawing.Point(15, 86);
+            this.lblStatLog.Location = new System.Drawing.Point(15, 94);
             this.lblStatLog.Name = "lblStatLog";
             this.lblStatLog.Size = new System.Drawing.Size(160, 16);
-            this.lblStatLog.TabIndex = 2;
+            this.lblStatLog.TabIndex = 3;
             this.lblStatLog.Text = "• Riwayat Sync / Error: -";
             // 
             // lblStatTotal
@@ -699,10 +736,10 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.lblStatTotal.AutoSize = true;
             this.lblStatTotal.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.lblStatTotal.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(0)))), ((int)(((byte)(104)))), ((int)(((byte)(168)))));
-            this.lblStatTotal.Location = new System.Drawing.Point(15, 118);
+            this.lblStatTotal.Location = new System.Drawing.Point(15, 122);
             this.lblStatTotal.Name = "lblStatTotal";
             this.lblStatTotal.Size = new System.Drawing.Size(250, 18);
-            this.lblStatTotal.TabIndex = 3;
+            this.lblStatTotal.TabIndex = 4;
             this.lblStatTotal.Text = "• Total Dokumen Transaksi: -";
             // 
             // btnRefreshStats
@@ -739,7 +776,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.lblDangerWarning.Name = "lblDangerWarning";
             this.lblDangerWarning.Size = new System.Drawing.Size(810, 48);
             this.lblDangerWarning.TabIndex = 0;
-            this.lblDangerWarning.Text = "PERINGATAN: Tombol di bawah ini akan melakukan PENGHAPUSAN TOTAL seluruh data transaksi dari staging database (Sales Order, Purchase Order, dan Riwayat Sync/Error). Seluruh transaksi akan hilang dan reset menjadi 0.";
+            this.lblDangerWarning.Text = "PERINGATAN: Tombol di bawah ini akan melakukan PENGHAPUSAN TOTAL seluruh data transaksi dari staging database (Purchase Order, Goods Receipt PO, Stock Transfer, dan Riwayat Sync/Error). Seluruh transaksi akan hilang dan reset menjadi 0.";
             // 
             // btnDeleteAllTx
             // 
@@ -843,8 +880,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         internal System.Windows.Forms.GroupBox grpBoxDebug;
         private System.Windows.Forms.Label lblDebugInfo;
         internal System.Windows.Forms.GroupBox grpBoxTxStats;
-        private System.Windows.Forms.Label lblStatSO;
         private System.Windows.Forms.Label lblStatPO;
+        private System.Windows.Forms.Label lblStatGRPO;
+        private System.Windows.Forms.Label lblStatTransfer;
         private System.Windows.Forms.Label lblStatLog;
         private System.Windows.Forms.Label lblStatTotal;
         internal System.Windows.Forms.Button btnRefreshStats;
@@ -879,10 +917,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         internal System.Windows.Forms.GroupBox grpBox1_1;
         private System.Windows.Forms.CheckBox chkSL;
         private System.Windows.Forms.Label label6;
-        private System.Windows.Forms.CheckBox chkSO;
-        private System.Windows.Forms.Label label3;
         private System.Windows.Forms.CheckBox chkPO;
         private System.Windows.Forms.Label labelPO;
+        private System.Windows.Forms.CheckBox chkGRPO;
+        private System.Windows.Forms.Label labelGRPO;
+        private System.Windows.Forms.CheckBox chkTransfer;
+        private System.Windows.Forms.Label labelTransfer;
         private System.Windows.Forms.CheckBox chkLogData;
         private System.Windows.Forms.Label label7;
         internal System.Windows.Forms.CheckBox chkAll1;

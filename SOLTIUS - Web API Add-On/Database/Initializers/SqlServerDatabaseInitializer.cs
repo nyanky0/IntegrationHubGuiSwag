@@ -18,62 +18,103 @@ namespace SOLTIUS_Web_API_Add_On.Database.Initializers
             using var connection = (SqlConnection)_connectionFactory.CreateConnection(config);
             await connection.OpenAsync();
 
-            await CreateSalesOrderHeader(connection);
-            await CreateSalesOrderDetail(connection);
             await CreatePurchaseOrderHeader(connection);
             await CreatePurchaseOrderDetail(connection);
+            await CreateGoodsReceiptPOTables(connection);
+            await CreateStockTransferTables(connection);
         }
 
-        private async Task CreateSalesOrderHeader(SqlConnection connection)
+        private async Task CreateGoodsReceiptPOTables(SqlConnection connection)
         {
             string sql = @"
-            IF OBJECT_ID('sales_order_header','U') IS NULL
-
-            CREATE TABLE sales_order_header
+            IF OBJECT_ID('SOL_GRPO_HEADER','U') IS NULL
+            CREATE TABLE SOL_GRPO_HEADER
             (
-                id BIGINT NOT NULL IDENTITY(1,1),
-                cardcode VARCHAR(30) NOT NULL,
-                cardname VARCHAR(200) NOT NULL,
-                docdate DATETIME NOT NULL,
-                docduedate DATETIME NOT NULL,
-                taxdate DATETIME NOT NULL,
-                remarks VARCHAR(254),
-                process_status TINYINT NOT NULL DEFAULT(0),
-                retrycount INT NOT NULL DEFAULT(0),
-                created_at DATETIME NOT NULL DEFAULT(GETDATE()),
-                updated_at DATETIME NULL,
-                processed_at DATETIME NULL,
-                errormessage NVARCHAR(MAX) NULL
-            );";
+                SOL_ID BIGINT NOT NULL IDENTITY(1,1) PRIMARY KEY,
+                SOL_CARDCODE VARCHAR(30) NOT NULL,
+                SOL_CARDNAME VARCHAR(200) NOT NULL,
+                SOL_DOCDATE DATETIME NOT NULL,
+                SOL_DOCDUEDATE DATETIME NOT NULL,
+                SOL_TAXDATE DATETIME NOT NULL,
+                SOL_REMARKS VARCHAR(254),
+                SOL_WEB_TX_NUMBER VARCHAR(50) NULL,
+                SOL_WEB_TX_ID BIGINT NULL,
+                SOL_UDF_DATA NVARCHAR(MAX) NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT(0),
+                SOL_RETRYCOUNT INT NOT NULL DEFAULT(0),
+                SOL_DOCENTRY VARCHAR(50),
+                SOL_CREATED_AT DATETIME NOT NULL DEFAULT(GETDATE()),
+                SOL_UPDATED_AT DATETIME NULL,
+                SOL_PROCESSED_AT DATETIME NULL,
+                SOL_ERRORMESSAGE NVARCHAR(MAX) NULL
+            );
 
+            IF OBJECT_ID('SOL_GRPO_DETAIL','U') IS NULL
+            CREATE TABLE SOL_GRPO_DETAIL
+            (
+                SOL_ID BIGINT NOT NULL IDENTITY(1,1) PRIMARY KEY,
+                SOL_HEADER_ID BIGINT NOT NULL,
+                SOL_LINENUM INT NOT NULL,
+                SOL_ITEMCODE VARCHAR(30) NOT NULL,
+                SOL_ITEMNAME VARCHAR(200) NOT NULL,
+                SOL_WAREHOUSE VARCHAR(20) NULL,
+                SOL_QUANTITY DECIMAL(19,6) NOT NULL,
+                SOL_PRICE DECIMAL(19,6) NULL,
+                SOL_VAT_GROUP VARCHAR(20) NULL,
+                SOL_WEB_LINE_ID BIGINT NULL,
+                SOL_UDF_DATA NVARCHAR(MAX) NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT(0),
+                SOL_CREATED_AT DATETIME2 NOT NULL DEFAULT(GETDATE())
+            );";
             await connection.ExecuteAsync(sql);
         }
 
-        private async Task CreateSalesOrderDetail(SqlConnection connection)
+        private async Task CreateStockTransferTables(SqlConnection connection)
         {
             string sql = @"
-            IF OBJECT_ID('sales_order_detail','U') IS NULL
-
-            CREATE TABLE sales_order_detail
+            IF OBJECT_ID('SOL_STOCK_TRANSFER_HEADER','U') IS NULL
+            CREATE TABLE SOL_STOCK_TRANSFER_HEADER
             (
-                id BIGINT NOT NULL IDENTITY(1,1),
-                header_id BIGINT NOT NULL,
-                linenum INT NOT NULL,
-                itemcode VARCHAR(30) NOT NULL,
-                itemname VARCHAR(200) NOT NULL,
-                warehouse VARCHAR(20) NULL,
-                quantity DECIMAL(19,6) NOT NULL,
-                price DECIMAL(19,6) NULL,
-                process_status TINYINT NOT NULL DEFAULT(0),
-                retrycount INT NOT NULL DEFAULT(0),
-                created_at DATETIME2 NOT NULL DEFAULT(GETDATE()),
-                updated_at DATETIME NULL,
-                processed_at DATETIME NULL,
-                errormessage NVARCHAR(MAX) NULL
-            );";
+                SOL_ID BIGINT NOT NULL IDENTITY(1,1) PRIMARY KEY,
+                SOL_CARDCODE VARCHAR(30) NULL,
+                SOL_CARDNAME VARCHAR(200) NULL,
+                SOL_DOCDATE DATETIME NOT NULL,
+                SOL_DOCDUEDATE DATETIME NOT NULL,
+                SOL_TAXDATE DATETIME NOT NULL,
+                SOL_REMARKS VARCHAR(254),
+                SOL_WEB_TX_NUMBER VARCHAR(50) NULL,
+                SOL_WEB_TX_ID BIGINT NULL,
+                SOL_UDF_DATA NVARCHAR(MAX) NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT(0),
+                SOL_RETRYCOUNT INT NOT NULL DEFAULT(0),
+                SOL_DOCENTRY VARCHAR(50),
+                SOL_CREATED_AT DATETIME NOT NULL DEFAULT(GETDATE()),
+                SOL_UPDATED_AT DATETIME NULL,
+                SOL_PROCESSED_AT DATETIME NULL,
+                SOL_ERRORMESSAGE NVARCHAR(MAX) NULL
+            );
 
+            IF OBJECT_ID('SOL_STOCK_TRANSFER_DETAIL','U') IS NULL
+            CREATE TABLE SOL_STOCK_TRANSFER_DETAIL
+            (
+                SOL_ID BIGINT NOT NULL IDENTITY(1,1) PRIMARY KEY,
+                SOL_HEADER_ID BIGINT NOT NULL,
+                SOL_LINENUM INT NOT NULL,
+                SOL_ITEMCODE VARCHAR(30) NOT NULL,
+                SOL_ITEMNAME VARCHAR(200) NOT NULL,
+                SOL_FROM_WAREHOUSE VARCHAR(20) NULL,
+                SOL_WAREHOUSE VARCHAR(20) NULL,
+                SOL_QUANTITY DECIMAL(19,6) NOT NULL,
+                SOL_PRICE DECIMAL(19,6) NULL,
+                SOL_WEB_LINE_ID BIGINT NULL,
+                SOL_UDF_DATA NVARCHAR(MAX) NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT(0),
+                SOL_CREATED_AT DATETIME2 NOT NULL DEFAULT(GETDATE())
+            );";
             await connection.ExecuteAsync(sql);
         }
+
+
 
         private async Task CreatePurchaseOrderHeader(SqlConnection connection)
         {

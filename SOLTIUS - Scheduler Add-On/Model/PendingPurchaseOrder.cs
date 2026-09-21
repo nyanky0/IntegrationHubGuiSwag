@@ -28,6 +28,7 @@ namespace SOLTIUS_Scheduler_Add_On.Model
         public string ItemCode { get; set; }
         public string ItemName { get; set; }
         public string Warehouse { get; set; }
+        public string FromWarehouse { get; set; }
         public decimal Quantity { get; set; }
         public decimal Price { get; set; }
         public string VatGroup { get; set; }

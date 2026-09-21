@@ -8,7 +8,7 @@ namespace SOLTIUS_Scheduler_Add_On.Services
     /// <summary>
     /// Engine scheduler headless — tanpa ketergantungan WinForms/UI.
     /// Dipakai oleh Windows Service (service mode) dan bisa di-start dari form.
-    /// Menjalankan SalesOrderSyncRunner.RunPendingSync sesuai interval / real-time
+    /// Menjalankan PurchaseOrder, GoodsReceiptPO, dan StockTransfer sync runner sesuai interval / real-time
     /// dari SchedulerConfig, dan menulis log ke file txt di folder aplikasi.
     /// </summary>
     public class SyncSchedulerEngine
@@ -104,9 +104,9 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                 SchedulerConfig config = SchedulerConfig.Load();
                 WriteLog($"Cycle dimulai. Profil aktif: {new ConfigService().GetActiveProfileName() ?? "-"}");
 
-                if (!config.SyncSalesOrder && !config.SyncPurchaseOrder && !config.SyncServiceLayer)
+                if (!config.SyncPurchaseOrder && !config.SyncGoodsReceiptPO && !config.SyncStockTransfer && !config.SyncServiceLayer)
                 {
-                    WriteLog("Semua fungsi mati (Sales Order, Purchase Order & Service Layer nonaktif) — cycle dilewati.");
+                    WriteLog("Semua fungsi mati (Purchase Order, Goods Receipt PO, Stock Transfer & Service Layer nonaktif) — cycle dilewati.");
                     return;
                 }
 
@@ -118,15 +118,6 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                 }
 
                 int failed = 0;
-                if (config.SyncSalesOrder)
-                {
-                    int soFailed = SalesOrderSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
-                    failed += soFailed;
-                    WriteLog(soFailed == 0
-                        ? "Sync Sales Order selesai — semua dokumen pending tersinkronisasi."
-                        : $"Sync Sales Order selesai — {soFailed} dokumen gagal.");
-                }
-
                 if (config.SyncPurchaseOrder)
                 {
                     int poFailed = PurchaseOrderSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
@@ -136,7 +127,59 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                         : $"Sync Purchase Order selesai — {poFailed} dokumen gagal.");
                 }
 
+                if (config.SyncGoodsReceiptPO)
+                {
+                    int grpoFailed = GoodsReceiptPOSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
+                    failed += grpoFailed;
+                    WriteLog(grpoFailed == 0
+                        ? "Sync Goods Receipt PO selesai — semua dokumen pending tersinkronisasi."
+                        : $"Sync Goods Receipt PO selesai — {grpoFailed} dokumen gagal.");
+                }
+
+                if (config.SyncStockTransfer)
+                {
+                    int transferFailed = StockTransferSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
+                    failed += transferFailed;
+                    WriteLog(transferFailed == 0
+                        ? "Sync Stock Transfer selesai — semua dokumen pending tersinkronisasi."
+                        : $"Sync Stock Transfer selesai — {transferFailed} dokumen gagal.");
+                }
+
+                // 4. Two-Way Status Reconciliation (Downsync dari SAP B1 ke Web App)
+                if (config.EnableReconciliation)
+                {
+                    try
+                    {
+                        int reconciled = SapReconciliationRunner.RunReconciliation(runnerConfig, config, WriteLog);
+                        if (reconciled > 0)
+                        {
+                            WriteLog($"Rekonsiliasi status selesai: {reconciled} dokumen ter-update ke Web App.");
+                        }
+                    }
+                    catch (Exception rex)
+                    {
+                        WriteLog("[Reconciliation] Warning: " + rex.Message);
+                    }
+                }
+
                 _lastFailedCount = failed;
+
+                // 3. Heartbeat & Service Health Beacon ke Web Laravel
+                if (config.EnableHeartbeat)
+                {
+                    try
+                    {
+                        string profileName = new ConfigService().GetActiveProfileName() ?? "Unknown";
+                        WebhookCallbackService.SendHeartbeatAsync(
+                            config.WebhookUrl,
+                            config.WebhookSecret,
+                            profileName,
+                            isRunning: true,
+                            lastFailedCount: failed
+                        );
+                    }
+                    catch { }
+                }
             }
             catch (Exception ex)
             {

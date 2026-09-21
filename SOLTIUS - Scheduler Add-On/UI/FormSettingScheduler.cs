@@ -19,8 +19,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private RadioButton rbRealtime;
         private NumericUpDown numIntervalMin;
         private NumericUpDown numRealtimeSec;
-        private CheckBox chkSO;
         private CheckBox chkPO;
+        private CheckBox chkGRPO;
+        private CheckBox chkTransfer;
         private CheckBox chkSL;
         private TextBox txtServiceName;
         private Label lblServiceStatus;
@@ -56,7 +57,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.ClientSize = new Size(520, 600);
+            this.ClientSize = new Size(520, 650);
 
             // ===== Judul =====
             var lblTitle = new Label
@@ -98,21 +99,23 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             rbInterval.CheckedChanged += (s, e) => UpdateNumericEnable();
 
             // ===== Group: Fungsi =====
-            var grpFunc = new GroupBox { Text = "Fungsi", Location = new Point(24, 200), Size = new Size(472, 115) };
+            var grpFunc = new GroupBox { Text = "Fungsi", Location = new Point(24, 200), Size = new Size(472, 140) };
             UITheme.ApplyGroup(grpFunc);
 
-            chkSO = new CheckBox { Text = "Sync Sales Order (ORDR)", Location = new Point(16, 25), AutoSize = true, Checked = true };
-            chkPO = new CheckBox { Text = "Sync Purchase Order (OPOR)", Location = new Point(16, 52), AutoSize = true, Checked = true };
-            chkSL = new CheckBox { Text = "Sync Service Layer (OSL) — belum diimplementasikan", Location = new Point(16, 79), AutoSize = true, Enabled = false };
+            chkPO = new CheckBox { Text = "Sync Purchase Order (OPOR)", Location = new Point(16, 25), AutoSize = true, Checked = true };
+            chkGRPO = new CheckBox { Text = "Sync Goods Receipt PO (OPDN)", Location = new Point(16, 52), AutoSize = true, Checked = true };
+            chkTransfer = new CheckBox { Text = "Sync Stock Transfer (OWTR)", Location = new Point(16, 79), AutoSize = true, Checked = true };
+            chkSL = new CheckBox { Text = "Sync Service Layer (OSL) — belum diimplementasikan", Location = new Point(16, 106), AutoSize = true, Enabled = false };
 
-            UITheme.ApplyCheck(chkSO);
             UITheme.ApplyCheck(chkPO);
+            UITheme.ApplyCheck(chkGRPO);
+            UITheme.ApplyCheck(chkTransfer);
             UITheme.ApplyCheck(chkSL);
 
-            grpFunc.Controls.AddRange(new Control[] { chkSO, chkPO, chkSL });
+            grpFunc.Controls.AddRange(new Control[] { chkPO, chkGRPO, chkTransfer, chkSL });
 
             // ===== Group: Windows Service =====
-            var grpSvc = new GroupBox { Text = "Windows Service", Location = new Point(24, 325), Size = new Size(472, 190) };
+            var grpSvc = new GroupBox { Text = "Windows Service", Location = new Point(24, 350), Size = new Size(472, 190) };
             UITheme.ApplyGroup(grpSvc);
 
             var lblSvcName = new Label { Text = "Nama Service", AutoSize = true, Location = new Point(16, 32) };
@@ -142,13 +145,13 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             });
 
             // ===== Status engine + aksi =====
-            lblEngineStatus = new Label { Text = "Engine: idle", Location = new Point(24, 522), AutoSize = true };
-            lblLastRun = new Label { Text = "", Location = new Point(24, 542), AutoSize = true };
+            lblEngineStatus = new Label { Text = "Engine: idle", Location = new Point(24, 550), AutoSize = true };
+            lblLastRun = new Label { Text = "", Location = new Point(24, 570), AutoSize = true };
             UITheme.ApplyLabel(lblEngineStatus);
             UITheme.ApplyLabel(lblLastRun, muted: true);
 
-            btnRunNow = new Button { Text = "Run Now", Location = new Point(360, 518), Size = new Size(136, 30) };
-            btnSave = new Button { Text = "Simpan", Location = new Point(360, 556), Size = new Size(136, 30) };
+            btnRunNow = new Button { Text = "Run Now", Location = new Point(360, 546), Size = new Size(136, 30) };
+            btnSave = new Button { Text = "Simpan", Location = new Point(360, 584), Size = new Size(136, 30) };
             UITheme.ApplySecondary(btnRunNow);
             UITheme.ApplyPrimary(btnSave);
 
@@ -190,8 +193,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             rbInterval.Checked = !realtime;
             numIntervalMin.Value = Math.Max(1, _config.IntervalMinutes);
             numRealtimeSec.Value = Math.Max(5, _config.RealtimeSeconds);
-            chkSO.Checked = _config.SyncSalesOrder;
             chkPO.Checked = _config.SyncPurchaseOrder;
+            chkGRPO.Checked = _config.SyncGoodsReceiptPO;
+            chkTransfer.Checked = _config.SyncStockTransfer;
             chkSL.Checked = _config.SyncServiceLayer;
             txtServiceName.Text = string.IsNullOrWhiteSpace(_config.ServiceName) ? "SOLTIUSSchedulerService" : _config.ServiceName;
             UpdateNumericEnable();
@@ -203,8 +207,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             _config.Mode = rbRealtime.Checked ? "Realtime" : "Interval";
             _config.IntervalMinutes = (int)numIntervalMin.Value;
             _config.RealtimeSeconds = (int)numRealtimeSec.Value;
-            _config.SyncSalesOrder = chkSO.Checked;
             _config.SyncPurchaseOrder = chkPO.Checked;
+            _config.SyncGoodsReceiptPO = chkGRPO.Checked;
+            _config.SyncStockTransfer = chkTransfer.Checked;
             _config.SyncServiceLayer = chkSL.Checked;
             _config.ServiceName = txtServiceName.Text.Trim();
             if (string.IsNullOrWhiteSpace(_config.ServiceName))
@@ -218,7 +223,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             string intervalDesc = _config.Mode == "Realtime"
                 ? $"setiap {_config.RealtimeSeconds} detik"
                 : $"setiap {_config.IntervalMinutes} menit";
-            MessageBox.Show($"Setting tersimpan.\n\nMode: {_config.Mode}\nInterval: {intervalDesc}\nSales Order: {(chkSO.Checked ? "Aktif" : "Nonaktif")}\nPurchase Order: {(chkPO.Checked ? "Aktif" : "Nonaktif")}\n\n" +
+            MessageBox.Show($"Setting tersimpan.\n\nMode: {_config.Mode}\nInterval: {intervalDesc}\nPurchase Order: {(chkPO.Checked ? "Aktif" : "Nonaktif")}\nGoods Receipt PO: {(chkGRPO.Checked ? "Aktif" : "Nonaktif")}\nStock Transfer: {(chkTransfer.Checked ? "Aktif" : "Nonaktif")}\n\n" +
                 "Perubahan interval berlaku saat service di-restart (Stop → Start).",
                 "Setting Scheduler", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }

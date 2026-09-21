@@ -21,11 +21,14 @@ namespace SOLTIUS_Scheduler_Add_On.Model
         /// <summary>Jarak antar-run dalam detik bila Mode == Realtime. Min 5.</summary>
         public int RealtimeSeconds { get; set; } = 10;
 
-        /// <summary>Jalankan sinkronisasi Sales Order (ORDR).</summary>
-        public bool SyncSalesOrder { get; set; } = true;
-
         /// <summary>Jalankan sinkronisasi Purchase Order (OPOR).</summary>
         public bool SyncPurchaseOrder { get; set; } = true;
+
+        /// <summary>Jalankan sinkronisasi Goods Receipt PO (OPDN).</summary>
+        public bool SyncGoodsReceiptPO { get; set; } = true;
+
+        /// <summary>Jalankan sinkronisasi Stock Transfer (OWTR).</summary>
+        public bool SyncStockTransfer { get; set; } = true;
 
         /// <summary>Jalankan sinkronisasi Service Layer. (Belum diimplementasi di engine.)</summary>
         public bool SyncServiceLayer { get; set; } = false;
@@ -35,6 +38,27 @@ namespace SOLTIUS_Scheduler_Add_On.Model
 
         /// <summary>Path exe aplikasi ini (target binPath service). Diisi saat install.</summary>
         public string ExecutablePath { get; set; } = "";
+
+        /// <summary>URL Endpoint Webhook Web Laravel untuk callback DocEntry, Heartbeat, dan Reconcile.</summary>
+        public string WebhookUrl { get; set; } = "http://localhost:8000/api/v1/sap/webhooks";
+
+        /// <summary>Secret key HMAC-SHA256 untuk verifikasi webhook.</summary>
+        public string WebhookSecret { get; set; } = "";
+
+        /// <summary>Aktifkan asynchronous webhook callback saat DocEntry SAP terbit.</summary>
+        public bool EnableWebhookCallback { get; set; } = true;
+
+        /// <summary>Aktifkan periodic heartbeat beacon ke Web Laravel.</summary>
+        public bool EnableHeartbeat { get; set; } = true;
+
+        /// <summary>Interval pengiriman heartbeat beacon (menit).</summary>
+        public int HeartbeatIntervalMinutes { get; set; } = 5;
+
+        /// <summary>Aktifkan Two-Way Status Reconciliation (Downsync Closed/Canceled dari SAP ke Web).</summary>
+        public bool EnableReconciliation { get; set; } = true;
+
+        /// <summary>Batas maksimal percobaan retry sebelum dipindahkan ke Dead-Letter Queue (status 3).</summary>
+        public int MaxRetryCount { get; set; } = 3;
 
         /// <summary>
         /// Berapa detik interval yang aktif ditentukan mode aktif.

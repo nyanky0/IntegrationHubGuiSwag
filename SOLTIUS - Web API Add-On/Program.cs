@@ -238,10 +238,6 @@ builder.Services.AddSingleton<IDatabaseInitializerFactory, DatabaseInitializerFa
 
 builder.Services.AddTransient<MySqlDatabaseInitializer>();
 builder.Services.AddTransient<SqlServerDatabaseInitializer>();
-
-builder.Services.AddScoped<ISalesOrderService, SalesOrderService>();
-builder.Services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
-
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
 

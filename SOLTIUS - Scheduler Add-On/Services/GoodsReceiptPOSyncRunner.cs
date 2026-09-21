@@ -7,12 +7,13 @@ using System.Collections.Generic;
 namespace SOLTIUS_Scheduler_Add_On.Services
 {
     /// <summary>
-    /// Engine sinkronisasi Purchase Order dari staging ke SAP, tanpa ketergantungan UI.
+    /// Engine sinkronisasi Goods Receipt PO (GRPO - OPDN) dari staging ke SAP B1, tanpa ketergantungan UI.
+    /// Mengikuti alur procurement resmi Web App IBT.
     /// </summary>
-    public static class PurchaseOrderSyncRunner
+    public static class GoodsReceiptPOSyncRunner
     {
         /// <summary>
-        /// Menjalankan sinkronisasi semua PO pending (SOL_PROCESS_STATUS = 0).
+        /// Menjalankan sinkronisasi semua GRPO pending (SOL_PROCESS_STATUS = 0).
         /// </summary>
         /// <returns>Jumlah dokumen yang gagal.</returns>
         public static int RunPendingSync(AppConfig config, bool isDryRun)
@@ -26,7 +27,7 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     "Staging hanya mendukung SQL Server. Profil aktif memakai tipe '" + config.ExternalDBType + "'.");
 
             var dbService = new DatabaseService(connString);
-            List<PendingPurchaseOrder> orders = dbService.LoadPendingPurchaseOrders();
+            List<PendingPurchaseOrder> orders = dbService.LoadPendingGoodsReceiptPOs();
 
             if (orders.Count == 0) return 0;
 
@@ -38,10 +39,10 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
                 foreach (var order in orders)
                 {
-                    // --- Skip if retry limit exceeded ---
-                    if (dbService.IsPurchaseOrderRetryLimitExceeded(order.HeaderId))
+                    // Skip if retry limit exceeded
+                    if (dbService.IsGoodsReceiptPORetryLimitExceeded(order.HeaderId))
                     {
-                        dbService.MarkPurchaseOrderAsExceededRetryLimit(order.HeaderId);
+                        dbService.MarkGoodsReceiptPOAsExceededRetryLimit(order.HeaderId);
                         LogSync(dbService, order, "Failed", null, "Skipped: max retry limit exceeded");
                         continue;
                     }
@@ -50,13 +51,13 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     {
                         if (isDryRun)
                         {
-                            LogSync(dbService, order, "Success", "DRY-RUN", "Validasi berhasil (Mode Simulasi)");
+                            LogSync(dbService, order, "Success", "DRY-RUN", "Validasi GRPO berhasil (Mode Simulasi)");
                         }
                         else
                         {
-                            string docEntry = sapService.ExecutePurchaseOrderSync(order);
+                            string docEntry = sapService.ExecuteGoodsReceiptPOSync(order);
                             LogSync(dbService, order, "Success", docEntry, "-");
-                            dbService.UpdatePurchaseOrderStatus(order.HeaderId, 1, null, docEntry);
+                            dbService.UpdateGoodsReceiptPOStatus(order.HeaderId, 1, null, docEntry);
 
                             // Asynchronous Webhook Callback ke Web Laravel
                             try
@@ -67,7 +68,7 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                                     WebhookCallbackService.SendDocEntryCallbackAsync(
                                         schedConfig.WebhookUrl,
                                         schedConfig.WebhookSecret,
-                                        "Purchase Order",
+                                        "Goods Receipt PO",
                                         docEntry,
                                         docEntry,
                                         order.WebTxNumber,
@@ -82,16 +83,13 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     {
                         failedCount++;
 
-                        // Catat kegagalan. UpdatePurchaseOrderStatus(status=2) sekaligus
-                        // menaikkan retrycount di tabel staging.
-                        dbService.UpdatePurchaseOrderStatus(order.HeaderId, 2, ex.Message);
+                        dbService.UpdateGoodsReceiptPOStatus(order.HeaderId, 2, ex.Message);
 
-                        // Setelah retrycount naik, cek apakah sudah tembus batas maksimal.
                         string errMsg = ex.Message;
-                        if (dbService.IsPurchaseOrderRetryLimitExceeded(order.HeaderId))
+                        if (dbService.IsGoodsReceiptPORetryLimitExceeded(order.HeaderId))
                         {
                             errMsg = "[DEAD-LETTER] " + ex.Message;
-                            dbService.MarkPurchaseOrderAsExceededRetryLimit(order.HeaderId);
+                            dbService.MarkGoodsReceiptPOAsExceededRetryLimit(order.HeaderId);
                         }
 
                         LogSync(dbService, order, "Failed", null, errMsg);
@@ -102,16 +100,13 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             return failedCount;
         }
 
-        /// <summary>
-        /// Log sync result with UID. Multi-line: logs once per order (not per line).
-        /// </summary>
         private static void LogSync(DatabaseService dbService, PendingPurchaseOrder order, string status, string docEntry, string errorMessage)
         {
             try
             {
                 var log = new SyncLogModel
                 {
-                    DocType = "Purchase Order",
+                    DocType = "Goods Receipt PO",
                     DocEntry = docEntry ?? "",
                     CardCode = order.CardCode ?? "",
                     ItemCode = order.Lines.Count > 0 ? order.Lines[0].ItemCode : "",

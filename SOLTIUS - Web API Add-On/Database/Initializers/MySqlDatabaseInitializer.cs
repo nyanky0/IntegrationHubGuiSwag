@@ -18,56 +18,95 @@ namespace SOLTIUS_Web_API_Add_On.Database.Initializers
             using var connection = (MySqlConnection)_connectionFactory.CreateConnection(config);
             await connection.OpenAsync();
 
-            await CreateSalesOrderHeader(connection);
-            await CreateSalesOrderDetail(connection);
             await CreatePurchaseOrderHeader(connection);
             await CreatePurchaseOrderDetail(connection);
+            await CreateGoodsReceiptPOTables(connection);
+            await CreateStockTransferTables(connection);
         }
 
-        private async Task CreateSalesOrderHeader(MySqlConnection connection)
+        private async Task CreateGoodsReceiptPOTables(MySqlConnection connection)
         {
             string sql = @"
-            CREATE TABLE IF NOT EXISTS sales_order_header
+            CREATE TABLE IF NOT EXISTS SOL_GRPO_HEADER
             (
-                id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                cardcode VARCHAR(30) NOT NULL,
-                cardname VARCHAR(200) NOT NULL,
-                docdate DATETIME NOT NULL,
-                docduedate DATETIME NOT NULL,
-                taxdate DATETIME NOT NULL,
-                remarks VARCHAR(254),
-                process_status TINYINT NOT NULL DEFAULT 0,
-                retrycount INT NOT NULL DEFAULT 0,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME,
-                processed_at DATETIME,
-                errormessage TEXT
-            );";
+                SOL_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                SOL_CARDCODE VARCHAR(30) NOT NULL,
+                SOL_CARDNAME VARCHAR(200) NOT NULL,
+                SOL_DOCDATE DATETIME NOT NULL,
+                SOL_DOCDUEDATE DATETIME NOT NULL,
+                SOL_TAXDATE DATETIME NOT NULL,
+                SOL_REMARKS VARCHAR(254),
+                SOL_WEB_TX_NUMBER VARCHAR(50) NULL,
+                SOL_WEB_TX_ID BIGINT NULL,
+                SOL_UDF_DATA LONGTEXT NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT 0,
+                SOL_RETRYCOUNT INT NOT NULL DEFAULT 0,
+                SOL_DOCENTRY VARCHAR(50),
+                SOL_CREATED_AT DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                SOL_UPDATED_AT DATETIME,
+                SOL_PROCESSED_AT DATETIME,
+                SOL_ERRORMESSAGE TEXT
+            );
 
+            CREATE TABLE IF NOT EXISTS SOL_GRPO_DETAIL
+            (
+                SOL_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                SOL_HEADER_ID BIGINT NOT NULL,
+                SOL_LINENUM INT NOT NULL,
+                SOL_ITEMCODE VARCHAR(30) NOT NULL,
+                SOL_ITEMNAME VARCHAR(200) NOT NULL,
+                SOL_WAREHOUSE VARCHAR(20),
+                SOL_QUANTITY DECIMAL(19,6) NOT NULL,
+                SOL_PRICE DECIMAL(19,6),
+                SOL_VAT_GROUP VARCHAR(20) NULL,
+                SOL_WEB_LINE_ID BIGINT NULL,
+                SOL_UDF_DATA LONGTEXT NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT 0,
+                SOL_CREATED_AT DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );";
             await connection.ExecuteAsync(sql);
         }
 
-        private async Task CreateSalesOrderDetail(MySqlConnection connection)
+        private async Task CreateStockTransferTables(MySqlConnection connection)
         {
             string sql = @"
-            CREATE TABLE IF NOT EXISTS sales_order_detail
+            CREATE TABLE IF NOT EXISTS SOL_STOCK_TRANSFER_HEADER
             (
-                id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                header_id BIGINT NOT NULL,
-                linenum INT NOT NULL,
-                itemcode VARCHAR(30) NOT NULL,
-                itemname VARCHAR(200) NOT NULL,
-                warehouse VARCHAR(20),
-                quantity DECIMAL(19,6) NOT NULL,
-                price DECIMAL(19,6),
-                process_status TINYINT NOT NULL DEFAULT 0,
-                retrycount INT NOT NULL DEFAULT 0,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME,
-                processed_at DATETIME,
-                errormessage TEXT
-            );";
+                SOL_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                SOL_CARDCODE VARCHAR(30) NULL,
+                SOL_CARDNAME VARCHAR(200) NULL,
+                SOL_DOCDATE DATETIME NOT NULL,
+                SOL_DOCDUEDATE DATETIME NOT NULL,
+                SOL_TAXDATE DATETIME NOT NULL,
+                SOL_REMARKS VARCHAR(254),
+                SOL_WEB_TX_NUMBER VARCHAR(50) NULL,
+                SOL_WEB_TX_ID BIGINT NULL,
+                SOL_UDF_DATA LONGTEXT NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT 0,
+                SOL_RETRYCOUNT INT NOT NULL DEFAULT 0,
+                SOL_DOCENTRY VARCHAR(50),
+                SOL_CREATED_AT DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                SOL_UPDATED_AT DATETIME,
+                SOL_PROCESSED_AT DATETIME,
+                SOL_ERRORMESSAGE TEXT
+            );
 
+            CREATE TABLE IF NOT EXISTS SOL_STOCK_TRANSFER_DETAIL
+            (
+                SOL_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                SOL_HEADER_ID BIGINT NOT NULL,
+                SOL_LINENUM INT NOT NULL,
+                SOL_ITEMCODE VARCHAR(30) NOT NULL,
+                SOL_ITEMNAME VARCHAR(200) NOT NULL,
+                SOL_FROM_WAREHOUSE VARCHAR(20) NULL,
+                SOL_WAREHOUSE VARCHAR(20) NULL,
+                SOL_QUANTITY DECIMAL(19,6) NOT NULL,
+                SOL_PRICE DECIMAL(19,6),
+                SOL_WEB_LINE_ID BIGINT NULL,
+                SOL_UDF_DATA LONGTEXT NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT 0,
+                SOL_CREATED_AT DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );";
             await connection.ExecuteAsync(sql);
         }
 

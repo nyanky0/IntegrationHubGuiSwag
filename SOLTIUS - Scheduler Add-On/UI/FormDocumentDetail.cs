@@ -25,6 +25,18 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             UITheme.ApplyGrid(dgvLines);
             UITheme.ApplySecondary(btnClose);
 
+            // Terapkan styling teks jelas pada semua input detail dokumen
+            foreach (Control c in grpHeaderInfo.Controls)
+            {
+                if (c is TextBox tb)
+                {
+                    tb.BackColor = Color.White;
+                    tb.ForeColor = UITheme.Text;
+                }
+            }
+            txtUdfInfo.BackColor = Color.White;
+            txtUdfInfo.ForeColor = UITheme.Text;
+
             this.Load += FormDocumentDetail_Load;
             this.btnClose.Click += (s, e) => this.Close();
         }
@@ -96,9 +108,13 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 {
                     lines = _dbService.LoadPurchaseOrderLineDetails(_header.HeaderId);
                 }
-                else if (_header.DocType == "Sales Order")
+                else if (_header.DocType == "Goods Receipt PO")
                 {
-                    lines = _dbService.LoadSalesOrderLineDetails(_header.HeaderId);
+                    lines = _dbService.LoadGoodsReceiptPOLineDetails(_header.HeaderId);
+                }
+                else if (_header.DocType == "Stock Transfer")
+                {
+                    lines = _dbService.LoadStockTransferLineDetails(_header.HeaderId);
                 }
             }
 

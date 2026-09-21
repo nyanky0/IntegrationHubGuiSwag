@@ -227,7 +227,6 @@
     <Compile Include="Model\Model.cs" />
     <Compile Include="Model\PendingPurchaseOrder.cs" />
     <Compile Include="Model\PendingQueueDocModel.cs" />
-    <Compile Include="Model\PendingSalesOrder.cs" />
     <Compile Include="Model\SchedulerConfig.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -237,11 +236,15 @@
     <Compile Include="Security\Encryption.cs" />
     <Compile Include="Services\ConfigService.cs" />
     <Compile Include="Services\DatabaseService.cs" />
+    <Compile Include="Services\GoodsReceiptPOSyncRunner.cs" />
     <Compile Include="Services\ProfileSyncService.cs" />
     <Compile Include="Services\PurchaseOrderSyncRunner.cs" />
-    <Compile Include="Services\SalesOrderSyncRunner.cs" />
+    <Compile Include="Services\SapQueryHelper.cs" />
     <Compile Include="Services\SapSyncService.cs" />
+    <Compile Include="Services\StockTransferSyncRunner.cs" />
     <Compile Include="Services\SyncSchedulerEngine.cs" />
+    <Compile Include="Services\SapReconciliationRunner.cs" />
+    <Compile Include="Services\WebhookCallbackService.cs" />
     <Compile Include="UI\AccessPasswordStore.cs" />
     <Compile Include="UI\UITheme.cs" />
     <Compile Include="UI\FormChooseCF.cs">
