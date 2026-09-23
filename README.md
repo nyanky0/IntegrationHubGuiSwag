@@ -129,17 +129,52 @@ Integration Hub adalah solusi middleware enterprise yang menjembatani komunikasi
 
 ---
 
-### 2. Purchase Order
-- **`POST /api/PurchaseOrder`**
-  - Mengirim transaksi PO baru ke antrean staging. Dilengkapi proteksi idempotensi duplikasi.
-- **`GET /api/PurchaseOrder/status/{webTxNumber}`**
-  - Cek status on-demand dokumen (mengetahui apakah masih `Pending`, `Failed`, atau sudah `Success` di SAP).
-- **`GET /api/PurchaseOrder/sync-status?since={isoDateTime}`**
-  - Batch rekonsiliasi data status untuk menarik semua perubahan status transaksi sejak waktu tertentu.
-- **`DELETE /api/PurchaseOrder/{webTxNumber}`**
-  - Membatalkan dan menghapus dokumen yang masih berada di antrean Staging Hub (belum masuk SAP).
-- **`POST /api/PurchaseOrder/cancel`**
-  - Memproses permintaan pembatalan dokumen yang sudah berhasil di-post ke SAP B1.
+### 2. Purchase Order Staging
+- **`POST /api/PurchaseOrder`**: Mengirim transaksi PO baru ke antrean staging. Dilengkapi proteksi idempotensi duplikasi.
+- **`GET /api/PurchaseOrder/status/{webTxNumber}`**: Cek status on-demand dokumen (`Pending`, `Failed`, atau `Success`).
+- **`GET /api/PurchaseOrder/sync-status?since={isoDateTime}`**: Batch rekonsiliasi data status untuk menarik perubahan status transaksi sejak waktu tertentu.
+- **`DELETE /api/PurchaseOrder/{webTxNumber}`**: Membatalkan dokumen yang masih berada di antrean Staging Hub.
+- **`POST /api/PurchaseOrder/cancel`**: Memproses permintaan pembatalan dokumen yang sudah berhasil di-post ke SAP B1.
+
+---
+
+### 3. Goods Receipt PO (GRPO) Staging
+- **`POST /api/GoodsReceiptPO`**: Mengirim penerimaan barang PO ke antrean staging (`@SOL_GRPO_H` & `@SOL_GRPO_D`).
+- **`GET /api/GoodsReceiptPO/status/{webTxNumber}`**: Cek status penerimaan barang ke SAP.
+
+---
+
+### 4. Stock Transfer (IT) Staging
+- **`POST /api/StockTransfer`**: Mengirim mutasi/transfer barang antar gudang & armada kapal (`@SOL_IT_H` & `@SOL_IT_D`).
+- **`GET /api/StockTransfer/status/{webTxNumber}`**: Cek status proses transfer barang ke SAP.
+
+---
+
+### 5. Master Data Suite (Dual Engine: SQL Server & SAP HANA)
+Endpoint master data dilengkapi otomatisasi **Staging Fallback Mode** untuk development:
+- **`GET /api/MasterData/item-hierarchy`**: Pohon hierarki kelompok barang suku cadang kapal (`@SOL_ITEMHIER`).
+- **`GET /api/MasterData/items`**: Master suku cadang kapal & katalog (`OITM`).
+- **`GET /api/MasterData/business-partners`**: Master vendor armada (`OCRD`).
+- **`GET /api/MasterData/warehouses`**: Master gudang darat & armada kapal (`OWHS`).
+- **`GET /api/MasterData/taxes`** (alias: `vat-groups`): Kode pajak transaksi / PPN (`OVTG`).
+- **`GET /api/MasterData/uoms`** (alias: `unit-of-measurements`): Satuan ukuran barang (`OUOM`).
+- **`GET /api/MasterData/uom-groups`** (alias: `unit-of-measurement-groups`): Grup satuan konversi (`OUGP`).
+- **`GET /api/MasterData/bin-locations`**: Lokasi rak per gudang (`OBIN`).
+- **`GET /api/MasterData/cost-centers`** (alias: `profit-centers`): Cost center armada / kapal & departemen (`OPRC`).
+- **`GET /api/MasterData/payment-terms`** (alias: `payment-terms-types`): Termin pembayaran vendor (`OCTG`).
+- **`GET /api/MasterData/freight`** (alias: `additional-expenses`): Biaya ekspedisi & ongkos angkut (`OEXD`).
+- **`GET /api/MasterData/projects`**: Kode proyek docking & overhaul (`OPRJ`).
+- **`GET /api/MasterData/item-groups`**: Master grup item suku cadang katalog (`OITB`).
+- **`GET /api/MasterData/hs-codes`**: Klasifikasi HS Code & lartas (`OCHS`).
+- **`GET /api/MasterData/part-numbers`**: Master part number komponen mesin kapal (`@SOL_PNUM_H` / `@SOL_PNUM_D`).
+
+---
+
+## 📚 Dokumentasi Teknis Lengkap
+
+Detail arsitektur, checklist database, dan standar pengkodean tersedia pada folder [`docs/`](docs/):
+- **[Development Guide & Architecture (`docs/DEVELOPMENT_GUIDE.md`)](docs/DEVELOPMENT_GUIDE.md)**: Panduan arsitektur, domain scope, aturan wajib push git, dan standar versioning.
+- **[SAP B1 Customization Checklist (`docs/SAP_B1_CUSTOMIZATION_CHECKLIST.md`)](docs/SAP_B1_CUSTOMIZATION_CHECKLIST.md)**: Checklist UDT, UDF, UDO, restart Service Layer, dan skrip verifikasi `sqlcmd`.
 
 ---
 
@@ -150,5 +185,19 @@ Integration Hub adalah solusi middleware enterprise yang menjembatani komunikasi
 
 ---
 
+## 🏷️ Versioning & Release Tracking
+Proyek ini mengadopsi standar **Semantic Versioning (SemVer)**:
+- **`v1.0.0`**: Rilis awal Web API .NET 8, OAuth2 JWT Bearer, Swagger UI, Purchase Order Staging, dan Scheduler WinForms GUI (DI API).
+- **`v1.1.0`**: Debug tab, total transaction purge, row delete context menu, staging DB health indicator, auto-resolution [-5006], selective sync queue.
+- **`v1.2.0`**:
+  - Penambahan endpoint `GET /api/MasterData/item-hierarchy` (`@SOL_ITEMHIER`).
+  - Penambahan seluruh master data pengadaan: `taxes`, `uoms`, `uom-groups`, `bin-locations`, `cost-centers`, `payment-terms`, `freight`, `projects`, `item-groups`, `hs-codes`, dan `part-numbers`.
+  - Penegasan Authoritative Domain Scope (RL tidak ada di SAP, tidak ada GI/GR mandiri, tidak ada AP DP/Invoice di web).
+  - Pembentukan struktur dokumentasi resmi pada folder `docs/`.
+  - Penetapan protokol wajib push Git setiap ada perubahan.
+
+---
+
 ## 📄 Lisensi
 Hak Cipta © 2026 SOLTIUS / PT Metrodata Electronics Tbk. Seluruh hak cipta dilindungi undang-undang.
+
