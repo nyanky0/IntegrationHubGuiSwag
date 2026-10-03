@@ -237,9 +237,11 @@
     <Compile Include="Services\ConfigService.cs" />
     <Compile Include="Services\DatabaseService.cs" />
     <Compile Include="Services\GoodsReceiptPOSyncRunner.cs" />
+    <Compile Include="Services\GoodsReturnSyncRunner.cs" />
     <Compile Include="Services\ProfileSyncService.cs" />
     <Compile Include="Services\PurchaseOrderSyncRunner.cs" />
     <Compile Include="Services\SapQueryHelper.cs" />
+    <Compile Include="Services\SapServiceLayerClient.cs" />
     <Compile Include="Services\SapSyncService.cs" />
     <Compile Include="Services\StockTransferSyncRunner.cs" />
     <Compile Include="Services\SyncSchedulerEngine.cs" />

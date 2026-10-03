@@ -445,6 +445,87 @@ namespace SOLTIUS_Scheduler_Add_On.Services
         }
 
         /// <summary>
+        /// Membuat Goods Return (ORPD) multi-line di SAP dari data pending staging.
+        /// </summary>
+        public string ExecuteGoodsReturnSync(PendingPurchaseOrder gre)
+        {
+            Documents oReturn = null;
+            Document_Lines oLines = null;
+
+            try
+            {
+                oReturn = (Documents)_oCompany.GetBusinessObject(BoObjectTypes.oPurchaseReturns);
+                oReturn.CardCode = gre.CardCode;
+                oReturn.DocDate = gre.DocDate;
+                oReturn.DocDueDate = gre.DocDueDate == DateTime.MinValue ? DateTime.Now.AddDays(7) : gre.DocDueDate;
+                oReturn.TaxDate = gre.TaxDate;
+                if (!string.IsNullOrEmpty(gre.Remarks))
+                    oReturn.Comments = gre.Remarks;
+                else
+                    oReturn.Comments = "Goods Return Sync via SOLTIUS Scheduler";
+
+                if (!string.IsNullOrEmpty(gre.WebTxNumber))
+                    TrySetUserField(oReturn.UserFields, "U_SOL_WebTxNumber", gre.WebTxNumber);
+                if (gre.WebTxId.HasValue)
+                    TrySetUserField(oReturn.UserFields, "U_SOL_WebTxId", gre.WebTxId.Value);
+
+                ApplyDynamicUdfs(oReturn.UserFields, gre.UdfDataJson);
+
+                foreach (var line in gre.Lines)
+                {
+                    oLines = oReturn.Lines;
+                    oLines.ItemCode = line.ItemCode;
+                    oLines.Quantity = (double)line.Quantity;
+                    oLines.Price = (double)line.Price;
+                    string resolvedWhs = ResolveWarehouse(line.Warehouse);
+                    if (!string.IsNullOrEmpty(resolvedWhs))
+                    {
+                        try { oLines.WarehouseCode = resolvedWhs; } catch { }
+                    }
+
+                    string resolvedVat = ResolvePurchaseVatGroup(line.VatGroup);
+                    if (!string.IsNullOrEmpty(resolvedVat))
+                    {
+                        try { oLines.VatGroup = resolvedVat; } catch { }
+                    }
+
+                    if (line.WebLineId.HasValue)
+                        TrySetUserField(oLines.UserFields, "U_SOL_WebLineId", line.WebLineId.Value);
+
+                    ApplyDynamicUdfs(oLines.UserFields, line.UdfDataJson);
+
+                    oLines.Add();
+                }
+
+                int addResult = oReturn.Add();
+                if (addResult != 0)
+                {
+                    _oCompany.GetLastError(out int errCode, out string errMsg);
+                    throw new Exception($"[{errCode}] {errMsg}");
+                }
+
+                return _oCompany.GetNewObjectKey();
+            }
+            catch (System.Runtime.InteropServices.COMException comEx)
+            {
+                throw new Exception(comEx.Message);
+            }
+            finally
+            {
+                if (oLines != null)
+                {
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(oLines);
+                    oLines = null;
+                }
+                if (oReturn != null)
+                {
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(oReturn);
+                    oReturn = null;
+                }
+            }
+        }
+
+        /// <summary>
         /// Membuat Inventory/Stock Transfer di SAP dari data pending staging.
         /// </summary>
         public string ExecuteStockTransferSync(PendingPurchaseOrder transfer)

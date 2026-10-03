@@ -23,41 +23,47 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             int updatedCount = 0;
             var dbService = new DatabaseService(connString);
 
-            using (var sapService = new SapSyncService())
+            using (var slClient = new SapServiceLayerClient(config))
             {
                 try
                 {
-                    sapService.ConnectToDIAPI(config);
+                    slClient.EnsureLogin();
                 }
                 catch (Exception ex)
                 {
-                    logWriter?.Invoke($"[Reconciliation] Gagal konek DI-API: {ex.Message}");
+                    logWriter?.Invoke($"[Reconciliation] Gagal konek Service Layer: {ex.Message}");
                     return 0;
                 }
 
                 // 1. Reconcile Purchase Order
                 if (schedConfig.SyncPurchaseOrder)
                 {
-                    updatedCount += ReconcileDocType(dbService, sapService, schedConfig, "Purchase Order", logWriter);
+                    updatedCount += ReconcileDocType(dbService, slClient, schedConfig, "Purchase Order", logWriter);
                 }
 
                 // 2. Reconcile Goods Receipt PO
                 if (schedConfig.SyncGoodsReceiptPO)
                 {
-                    updatedCount += ReconcileDocType(dbService, sapService, schedConfig, "Goods Receipt PO", logWriter);
+                    updatedCount += ReconcileDocType(dbService, slClient, schedConfig, "Goods Receipt PO", logWriter);
                 }
 
                 // 3. Reconcile Stock Transfer
                 if (schedConfig.SyncStockTransfer)
                 {
-                    updatedCount += ReconcileDocType(dbService, sapService, schedConfig, "Stock Transfer", logWriter);
+                    updatedCount += ReconcileDocType(dbService, slClient, schedConfig, "Stock Transfer", logWriter);
+                }
+
+                // 4. Reconcile Goods Return
+                if (schedConfig.SyncGoodsReturn)
+                {
+                    updatedCount += ReconcileDocType(dbService, slClient, schedConfig, "Goods Return", logWriter);
                 }
             }
 
             return updatedCount;
         }
 
-        private static int ReconcileDocType(DatabaseService dbService, SapSyncService sapService, SchedulerConfig schedConfig, string docType, Action<string> logWriter)
+        private static int ReconcileDocType(DatabaseService dbService, SapServiceLayerClient slClient, SchedulerConfig schedConfig, string docType, Action<string> logWriter)
         {
             int updated = 0;
             try
@@ -71,7 +77,7 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
                     try
                     {
-                        var statusResult = sapService.GetDocumentStatus(docType, docEntry);
+                        var statusResult = slClient.GetDocumentStatus(docType, docEntry);
                         if (statusResult.Exists && (statusResult.Status == "Closed" || statusResult.Status == "Canceled"))
                         {
                             // Kirim webhook ke Laravel

@@ -106,6 +106,8 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
             if (type.Contains("grpo") || type.Contains("goods receipt") || type.Contains("delivery"))
                 tableName = "OPDN";
+            else if (type.Contains("return") || type.Contains("gre"))
+                tableName = "ORPD";
             else if (type.Contains("transfer") || type.Contains("stock") || type.Contains("packing"))
                 tableName = "OWTR";
 

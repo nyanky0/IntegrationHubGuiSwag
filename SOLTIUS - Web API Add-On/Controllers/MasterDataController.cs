@@ -2,8 +2,12 @@ using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using SOLTIUS_Web_API_Add_On.Database.Interfaces;
 using SOLTIUS_Web_API_Add_On.Models.Configuration;
+using SOLTIUS_Web_API_Add_On.Models.MasterData;
 using SOLTIUS_Web_API_Add_On.Services.Configuration;
+using SOLTIUS_Web_API_Add_On.Services.Sap;
 using System.Data.Common;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace SOLTIUS_Web_API_Add_On.Controllers
 {
@@ -12,11 +16,33 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
     {
         private readonly IDatabaseConnectionFactory _connectionFactory;
         private readonly IConfigurationService _configurationService;
+        private readonly ISapMasterDataService _sapMasterDataService;
 
-        public MasterDataController(IDatabaseConnectionFactory connectionFactory, IConfigurationService configurationService)
+        public MasterDataController(
+            IDatabaseConnectionFactory connectionFactory, 
+            IConfigurationService configurationService,
+            ISapMasterDataService sapMasterDataService)
         {
             _connectionFactory = connectionFactory;
             _configurationService = configurationService;
+            _sapMasterDataService = sapMasterDataService;
+        }
+
+        private DBConfig GetSapDatabaseConfig()
+        {
+            DBConfig config = _configurationService.GetDatabaseConfig();
+            string sapDbName = Environment.GetEnvironmentVariable("SAP_B1_COMPANY_DB") ?? "IBTWEBAPP";
+
+            // Pastikan pembacaan master data SAP mengarah ke database SAP (IBTWEBAPP)
+            return new DBConfig
+            {
+                DBType = config.DBType,
+                Server = config.Server,
+                Port = config.Port,
+                DatabaseName = !string.IsNullOrWhiteSpace(sapDbName) ? sapDbName : config.DatabaseName,
+                UserName = config.UserName,
+                Password = config.Password
+            };
         }
 
         [HttpGet("items")]
@@ -24,58 +50,101 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                int topCount = Math.Clamp(top, 1, 1000);
+                var filterParts = new List<string>();
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                int topCount = Math.Min(top, 1000);
-                string query;
-                if (isHanaOrMysql)
+                if (!string.IsNullOrWhiteSpace(search))
                 {
-                    query = @"
-                        SELECT 
-                            ItemCode, ItemName, ItmsGrpCod as GroupCode, 
-                            InvntryUom as UomCode, SalUnitMsr as SalesUom,
-                            UpdateDate, CreateDate
-                        FROM OITM
-                        WHERE (@Search IS NULL OR ItemCode LIKE CONCAT('%', @Search, '%') OR ItemName LIKE CONCAT('%', @Search, '%'))
-                          AND (@Since IS NULL OR UpdateDate >= @Since)
-                        ORDER BY ItemCode
-                        LIMIT " + topCount + ";";
-                }
-                else
-                {
-                    query = @"
-                        SELECT TOP (" + topCount + @") 
-                            ItemCode, ItemName, ItmsGrpCod as GroupCode, 
-                            InvntryUom as UomCode, SalUnitMsr as SalesUom,
-                            UpdateDate, CreateDate
-                        FROM OITM
-                        WHERE (@Search IS NULL OR ItemCode LIKE '%' + @Search + '%' OR ItemName LIKE '%' + @Search + '%')
-                          AND (@Since IS NULL OR UpdateDate >= @Since)
-                        ORDER BY ItemCode;";
+                    string safeSearch = search.Trim().Replace("'", "''");
+                    filterParts.Add($"(contains(ItemCode, '{safeSearch}') or contains(ItemName, '{safeSearch}'))");
                 }
 
-                var items = await conn.QueryAsync(query, new { Search = search, Since = since });
-                return Ok(new { success = true, count = items.Count(), data = items });
+                if (since.HasValue)
+                {
+                    string sinceIso = since.Value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
+                    filterParts.Add($"UpdateDate ge '{sinceIso}'");
+                }
+
+                var queryParams = new List<string>
+                {
+                    "$select=ItemCode,ItemName,ItemsGroupCode,InventoryUOM,SalesUnit,UpdateDate,CreateDate",
+                    $"$top={topCount}"
+                };
+
+                if (skip > 0)
+                {
+                    queryParams.Add($"$skip={skip}");
+                }
+
+                if (filterParts.Count > 0)
+                {
+                    queryParams.Add($"$filter={string.Join(" and ", filterParts)}");
+                }
+
+                string queryString = string.Join("&", queryParams);
+                var jsonItems = await _sapMasterDataService.GetODataCollectionAsync("Items", queryString);
+
+                var items = jsonItems.Select(n =>
+                {
+                    var obj = n?.AsObject();
+                    return new
+                    {
+                        ItemCode = obj?["ItemCode"]?.ToString() ?? "",
+                        ItemName = obj?["ItemName"]?.ToString() ?? "",
+                        GroupCode = obj?["ItemsGroupCode"] != null ? Convert.ToInt32(obj["ItemsGroupCode"]!.ToString()) : 100,
+                        UomCode = obj?["InventoryUOM"]?.ToString(),
+                        SalesUom = obj?["SalesUnit"]?.ToString(),
+                        UpdateDate = obj?["UpdateDate"]?.ToString(),
+                        CreateDate = obj?["CreateDate"]?.ToString()
+                    };
+                }).ToList();
+
+                return Ok(new { success = true, count = items.Count, data = items });
             }
             catch (Exception ex)
             {
-                // Fallback mock/sample response jika tabel OITM belum ada di db staging
-                return Ok(new
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "SAP Service Layer query failed: " + ex.Message
+                });
+            }
+        }
+
+        [HttpPost("items")]
+        public async Task<IActionResult> CreateItem([FromBody] MasterDataItemRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ItemCode))
+            {
+                return BadRequest(new { success = false, message = "ItemCode is required." });
+            }
+
+            try
+            {
+                var created = await _sapMasterDataService.CreateItemAsync(request);
+                return StatusCode(201, new
                 {
                     success = true,
-                    isFallback = true,
-                    message = "Integration Hub Staging Data Mode: " + ex.Message,
-                    data = new[]
-                    {
-                        new { ItemCode = "ITM-001", ItemName = "Sparepart Engine Filter", UomCode = "PCS", GroupCode = 101 },
-                        new { ItemCode = "ITM-002", ItemName = "Marine Lubricant Oil 20L", UomCode = "CAN", GroupCode = 102 },
-                        new { ItemCode = "ITM-003", ItemName = "Gasket Cylinder Head", UomCode = "SET", GroupCode = 101 }
-                    }
+                    message = "Item successfully created in SAP Business One.",
+                    data = created
+                });
+            }
+            catch (SapServiceLayerException ex)
+            {
+                int statusCode = ex.StatusCode >= 400 && ex.StatusCode < 500 ? ex.StatusCode : 400;
+                return StatusCode(statusCode, new
+                {
+                    success = false,
+                    errorCode = ex.ErrorCode,
+                    message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = ex.Message
                 });
             }
         }
@@ -85,52 +154,104 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                var filterParts = new List<string>();
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query;
-                if (isHanaOrMysql)
+                if (!string.IsNullOrWhiteSpace(cardType))
                 {
-                    query = @"
-                        SELECT 
-                            CardCode, CardName, CardType, GroupCode, Currency, ValidFor
-                        FROM OCRD
-                        WHERE (@CardType IS NULL OR CardType = @CardType)
-                          AND (@Search IS NULL OR CardCode LIKE CONCAT('%', @Search, '%') OR CardName LIKE CONCAT('%', @Search, '%'))
-                        ORDER BY CardName
-                        LIMIT 200;";
-                }
-                else
-                {
-                    query = @"
-                        SELECT TOP 200 
-                            CardCode, CardName, CardType, GroupCode, Currency, ValidFor
-                        FROM OCRD
-                        WHERE (@CardType IS NULL OR CardType = @CardType)
-                          AND (@Search IS NULL OR CardCode LIKE '%' + @Search + '%' OR CardName LIKE '%' + @Search + '%')
-                        ORDER BY CardName;";
+                    string sapCardType = cardType.Trim().ToUpper() switch
+                    {
+                        "C" => "cCustomer",
+                        "S" => "cSupplier",
+                        "L" => "cLid",
+                        _ => "cSupplier"
+                    };
+                    filterParts.Add($"CardType eq '{sapCardType}'");
                 }
 
-                var bps = await conn.QueryAsync(query, new { CardType = cardType, Search = search });
-                return Ok(new { success = true, count = bps.Count(), data = bps });
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    string safeSearch = search.Trim().Replace("'", "''");
+                    filterParts.Add($"(contains(CardCode, '{safeSearch}') or contains(CardName, '{safeSearch}'))");
+                }
+
+                var queryParams = new List<string>
+                {
+                    "$select=CardCode,CardName,CardType,GroupCode,Currency,Valid",
+                    "$top=200"
+                };
+
+                if (filterParts.Count > 0)
+                {
+                    queryParams.Add($"$filter={string.Join(" and ", filterParts)}");
+                }
+
+                string queryString = string.Join("&", queryParams);
+                var jsonBps = await _sapMasterDataService.GetODataCollectionAsync("BusinessPartners", queryString);
+
+                var bps = jsonBps.Select(n =>
+                {
+                    var obj = n?.AsObject();
+                    string ct = obj?["CardType"]?.ToString() ?? "";
+                    string shortType = ct.Contains("Supplier", StringComparison.OrdinalIgnoreCase) ? "S" :
+                                       ct.Contains("Customer", StringComparison.OrdinalIgnoreCase) ? "C" : "L";
+
+                    return new
+                    {
+                        CardCode = obj?["CardCode"]?.ToString() ?? "",
+                        CardName = obj?["CardName"]?.ToString() ?? "",
+                        CardType = shortType,
+                        GroupCode = obj?["GroupCode"] != null ? Convert.ToInt32(obj["GroupCode"]!.ToString()) : 0,
+                        Currency = obj?["Currency"]?.ToString() ?? "IDR",
+                        ValidFor = obj?["Valid"]?.ToString() ?? "tYES"
+                    };
+                }).ToList();
+
+                return Ok(new { success = true, count = bps.Count, data = bps });
             }
             catch (Exception ex)
             {
-                return Ok(new
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "SAP Service Layer query failed: " + ex.Message
+                });
+            }
+        }
+
+        [HttpPost("business-partners")]
+        public async Task<IActionResult> CreateBusinessPartner([FromBody] MasterDataBusinessPartnerRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.CardName))
+            {
+                return BadRequest(new { success = false, message = "CardName is required." });
+            }
+
+            try
+            {
+                var created = await _sapMasterDataService.CreateBusinessPartnerAsync(request);
+                return StatusCode(201, new
                 {
                     success = true,
-                    isFallback = true,
-                    message = "Integration Hub Staging Data Mode: " + ex.Message,
-                    data = new[]
-                    {
-                        new { CardCode = "VL-00001", CardName = "PT CATERPILLAR INDONESIA", CardType = "S", Currency = "IDR" },
-                        new { CardCode = "VL-00002", CardName = "PT KOMATSU MARKETING", CardType = "S", Currency = "IDR" },
-                        new { CardCode = "VL-00004", CardName = "Acme Associates (Vendor Utama)", CardType = "S", Currency = "IDR" }
-                    }
+                    message = "Business partner successfully created in SAP Business One.",
+                    data = created
+                });
+            }
+            catch (SapServiceLayerException ex)
+            {
+                int statusCode = ex.StatusCode >= 400 && ex.StatusCode < 500 ? ex.StatusCode : 400;
+                return StatusCode(statusCode, new
+                {
+                    success = false,
+                    errorCode = ex.ErrorCode,
+                    message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = ex.Message
                 });
             }
         }
@@ -140,31 +261,73 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                string queryString = "$select=WarehouseCode,WarehouseName,BusinessPlaceID,Inactive&$orderby=WarehouseCode";
+                var jsonWhs = await _sapMasterDataService.GetODataCollectionAsync("Warehouses", queryString);
 
-                string query = @"
-                    SELECT WhsCode, WhsName, BPLid, Inactive
-                    FROM OWHS
-                    ORDER BY WhsCode;";
+                var whs = jsonWhs.Select(n =>
+                {
+                    var obj = n?.AsObject();
+                    int? bplId = null;
+                    if (obj?["BusinessPlaceID"] != null && int.TryParse(obj["BusinessPlaceID"]!.ToString(), out int parsedBpl))
+                    {
+                        bplId = parsedBpl;
+                    }
 
-                var whs = await conn.QueryAsync(query);
-                return Ok(new { success = true, count = whs.Count(), data = whs });
+                    return new
+                    {
+                        WhsCode = obj?["WarehouseCode"]?.ToString() ?? "",
+                        WhsName = obj?["WarehouseName"]?.ToString() ?? "",
+                        BPLid = bplId,
+                        Inactive = obj?["Inactive"]?.ToString() ?? "tNO"
+                    };
+                }).ToList();
+
+                return Ok(new { success = true, count = whs.Count, data = whs });
             }
             catch (Exception ex)
             {
-                return Ok(new
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "SAP Service Layer query failed: " + ex.Message
+                });
+            }
+        }
+
+        [HttpPost("warehouses")]
+        public async Task<IActionResult> CreateWarehouse([FromBody] MasterDataWarehouseRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.WhsCode))
+            {
+                return BadRequest(new { success = false, message = "WhsCode is required." });
+            }
+
+            try
+            {
+                var created = await _sapMasterDataService.CreateWarehouseAsync(request);
+                return StatusCode(201, new
                 {
                     success = true,
-                    isFallback = true,
-                    message = "Integration Hub Staging Data Mode: " + ex.Message,
-                    data = new[]
-                    {
-                        new { WhsCode = "WH-IBT", WhsName = "Gudang Utama IBT", BPLid = 1 },
-                        new { WhsCode = "WH-ISL", WhsName = "Gudang Logistik ISL", BPLid = 2 },
-                        new { WhsCode = "WHS-D1", WhsName = "Gudang Dermaga Balikpapan", BPLid = 1 }
-                    }
+                    message = "Warehouse successfully created in SAP Business One.",
+                    data = created
+                });
+            }
+            catch (SapServiceLayerException ex)
+            {
+                int statusCode = ex.StatusCode >= 400 && ex.StatusCode < 500 ? ex.StatusCode : 400;
+                return StatusCode(statusCode, new
+                {
+                    success = false,
+                    errorCode = ex.ErrorCode,
+                    message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = ex.Message
                 });
             }
         }
@@ -173,6 +336,7 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         public async Task<IActionResult> GetItemHierarchy([FromQuery] string? search, [FromQuery] int top = 100, [FromQuery] int skip = 0)
         {
             try
+
             {
                 DBConfig config = _configurationService.GetDatabaseConfig();
                 using DbConnection conn = _connectionFactory.CreateConnection(config);
@@ -276,38 +440,40 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                string queryString = "$select=Code,Name,Inactive,Category,VatGroups_Lines&$orderby=Code";
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("VatGroups", queryString);
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""Code"", ""Name"", ""Rate"", ""Inactive"", ""Category"" FROM OVTG ORDER BY ""Code"";"
-                    : @"SELECT Code, Name, Rate, Inactive, Category FROM OVTG ORDER BY Code;";
-
-                var rawRows = await conn.QueryAsync(query);
-                var rows = rawRows.Select(r => new
+                var rows = jsonRows.Select(n =>
                 {
-                    Code = (string)r.Code,
-                    Name = (string)(r.Name ?? r.Code),
-                    Rate = r.Rate != null ? Convert.ToDecimal(r.Rate) : 0m,
-                    Inactive = (string)(r.Inactive ?? "tNO"),
-                    Category = (string)(r.Category ?? string.Empty)
+                    var obj = n?.AsObject();
+                    decimal rate = 0m;
+                    if (obj?["VatGroups_Lines"] is JsonArray lines && lines.Count > 0)
+                    {
+                        var firstLine = lines[0]?.AsObject();
+                        if (firstLine?["Rate"] != null && decimal.TryParse(firstLine["Rate"]!.ToString(), out decimal parsedRate))
+                        {
+                            rate = parsedRate;
+                        }
+                    }
+
+                    string category = obj?["Category"]?.ToString() ?? "";
+                    string shortCat = category.Contains("Input", StringComparison.OrdinalIgnoreCase) ? "I" : "O";
+
+                    return new
+                    {
+                        Code = obj?["Code"]?.ToString() ?? "",
+                        Name = obj?["Name"]?.ToString() ?? "",
+                        Rate = rate,
+                        Inactive = obj?["Inactive"]?.ToString() ?? "tNO",
+                        Category = shortCat
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { Code = "PPN11", Name = "PPN 11%", Rate = 11.0m, Inactive = "tNO", Category = "O" },
-                    new { Code = "PPN12", Name = "PPN 12%", Rate = 12.0m, Inactive = "tNO", Category = "O" },
-                    new { Code = "NON_PPN", Name = "Non PPN / Bebas Pajak", Rate = 0.0m, Inactive = "tNO", Category = "O" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -317,42 +483,27 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                string queryString = "$select=AbsEntry,Code,Name&$orderby=Code";
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("UnitOfMeasurements", queryString);
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""UomEntry"" AS ""AbsEntry"", ""UomCode"" AS ""Code"", ""UomName"" AS ""Name"", ""Locked"" FROM OUOM ORDER BY ""UomCode"";"
-                    : @"SELECT UomEntry AS AbsEntry, UomCode AS Code, UomName AS Name, Locked FROM OUOM ORDER BY UomCode;";
-
-                var rawRows = await conn.QueryAsync(query);
-                var rows = rawRows.Select(r => new
+                var rows = jsonRows.Select(n =>
                 {
-                    AbsEntry = Convert.ToInt32(r.AbsEntry),
-                    Code = (string)r.Code,
-                    Name = (string)(r.Name ?? r.Code),
-                    Locked = (string)(r.Locked ?? "tNO")
+                    var obj = n?.AsObject();
+                    int absEntry = obj?["AbsEntry"] != null ? Convert.ToInt32(obj["AbsEntry"]!.ToString()) : 0;
+                    return new
+                    {
+                        AbsEntry = absEntry,
+                        Code = obj?["Code"]?.ToString() ?? "",
+                        Name = obj?["Name"]?.ToString() ?? "",
+                        Locked = "tNO"
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { AbsEntry = 1, Code = "PCS", Name = "Pieces", Locked = "tNO" },
-                    new { AbsEntry = 2, Code = "SET", Name = "Set", Locked = "tNO" },
-                    new { AbsEntry = 3, Code = "CAN", Name = "Can", Locked = "tNO" },
-                    new { AbsEntry = 4, Code = "LTR", Name = "Liter", Locked = "tNO" },
-                    new { AbsEntry = 5, Code = "MTR", Name = "Meter", Locked = "tNO" },
-                    new { AbsEntry = 6, Code = "BOX", Name = "Box", Locked = "tNO" },
-                    new { AbsEntry = 7, Code = "ROLL", Name = "Roll", Locked = "tNO" },
-                    new { AbsEntry = 8, Code = "DRUM", Name = "Drum 200L", Locked = "tNO" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -362,36 +513,29 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                string queryString = "$select=AbsEntry,Code,Name,BaseUoM&$orderby=Code";
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("UnitOfMeasurementGroups", queryString);
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""UgpEntry"" AS ""AbsEntry"", ""UgpCode"" AS ""Code"", ""UgpName"" AS ""Name"", ""BaseUom"" FROM OUGP ORDER BY ""UgpCode"";"
-                    : @"SELECT UgpEntry AS AbsEntry, UgpCode AS Code, UgpName AS Name, BaseUom FROM OUGP ORDER BY UgpCode;";
-
-                var rawRows = await conn.QueryAsync(query);
-                var rows = rawRows.Select(r => new
+                var rows = jsonRows.Select(n =>
                 {
-                    AbsEntry = Convert.ToInt32(r.AbsEntry),
-                    Code = (string)r.Code,
-                    Name = (string)(r.Name ?? r.Code),
-                    BaseUom = r.BaseUom != null ? Convert.ToInt32(r.BaseUom) : 0
+                    var obj = n?.AsObject();
+                    int absEntry = obj?["AbsEntry"] != null ? Convert.ToInt32(obj["AbsEntry"]!.ToString()) : 0;
+                    int baseUom = obj?["BaseUoM"] != null ? Convert.ToInt32(obj["BaseUoM"]!.ToString()) : 0;
+
+                    return new
+                    {
+                        AbsEntry = absEntry,
+                        Code = obj?["Code"]?.ToString() ?? "",
+                        Name = obj?["Name"]?.ToString() ?? "",
+                        BaseUom = baseUom
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { AbsEntry = -1, Code = "Manual", Name = "Manual UoM Group", BaseUom = -1 },
-                    new { AbsEntry = 1, Code = "GRP-PCS", Name = "Group Pieces", BaseUom = 1 }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -400,44 +544,33 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
-
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""AbsEntry"", ""BinCode"", ""WhsCode"" AS ""Warehouse"", ""Disabled"" AS ""Inactive"" 
-                        FROM OBIN 
-                        WHERE (@Warehouse IS NULL OR ""WhsCode"" = @Warehouse)
-                        ORDER BY ""BinCode"";"
-                    : @"SELECT AbsEntry, BinCode, WhsCode AS Warehouse, Disabled AS Inactive 
-                        FROM OBIN 
-                        WHERE (@Warehouse IS NULL OR WhsCode = @Warehouse)
-                        ORDER BY BinCode;";
-
-                var rawRows = await conn.QueryAsync(query, new { Warehouse = warehouse });
-                var rows = rawRows.Select(r => new
+                string queryParams = "$select=AbsEntry,BinCode,Warehouse,Inactive&$orderby=BinCode";
+                if (!string.IsNullOrWhiteSpace(warehouse))
                 {
-                    AbsEntry = Convert.ToInt32(r.AbsEntry),
-                    BinCode = (string)r.BinCode,
-                    Warehouse = (string)r.Warehouse,
-                    Inactive = (string)(r.Inactive ?? "tNO")
+                    string safeWhs = warehouse.Trim().Replace("'", "''");
+                    queryParams += $"&$filter=Warehouse eq '{safeWhs}'";
+                }
+
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("BinLocations", queryParams);
+
+                var rows = jsonRows.Select(n =>
+                {
+                    var obj = n?.AsObject();
+                    int absEntry = obj?["AbsEntry"] != null ? Convert.ToInt32(obj["AbsEntry"]!.ToString()) : 0;
+                    return new
+                    {
+                        AbsEntry = absEntry,
+                        BinCode = obj?["BinCode"]?.ToString() ?? "",
+                        Warehouse = obj?["Warehouse"]?.ToString() ?? "",
+                        Inactive = obj?["Inactive"]?.ToString() ?? "tNO"
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { AbsEntry = 101, BinCode = "HO-A01-R01-S01", Warehouse = "WHS-HO", Inactive = "tNO" },
-                    new { AbsEntry = 102, BinCode = "HO-A01-R01-S02", Warehouse = "WHS-HO", Inactive = "tNO" },
-                    new { AbsEntry = 103, BinCode = "HO-A02-R01-S01", Warehouse = "WHS-HO", Inactive = "tNO" },
-                    new { AbsEntry = 201, BinCode = "IBT-SP-01-A", Warehouse = "WH-IBT", Inactive = "tNO" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -447,47 +580,32 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
-
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""PrcCode"" AS ""CenterCode"", ""PrcName"" AS ""CenterName"", ""DimCode"" AS ""InWhichDimension"", ""Active"" 
-                        FROM OPRC 
-                        WHERE LOWER(""PrcCode"") NOT LIKE 'centr_z%'
-                          AND (@Dimension IS NULL OR ""DimCode"" = @Dimension)
-                        ORDER BY ""PrcCode"";"
-                    : @"SELECT PrcCode AS CenterCode, PrcName AS CenterName, DimCode AS InWhichDimension, Active 
-                        FROM OPRC 
-                        WHERE PrcCode NOT LIKE 'Centr_z%'
-                          AND (@Dimension IS NULL OR DimCode = @Dimension)
-                        ORDER BY PrcCode;";
-
-                var rawRows = await conn.QueryAsync(query, new { Dimension = dimension });
-                var rows = rawRows.Select(r => new
+                string queryParams = "$select=CenterCode,CenterName,InWhichDimension,Active&$orderby=CenterCode";
+                if (dimension.HasValue)
                 {
-                    CenterCode = (string)r.CenterCode,
-                    CenterName = (string)(r.CenterName ?? r.CenterCode),
-                    InWhichDimension = Convert.ToInt32(r.InWhichDimension),
-                    Active = (string)(r.Active ?? "tYES")
+                    queryParams += $"&$filter=InWhichDimension eq {dimension.Value}";
+                }
+
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("ProfitCenters", queryParams);
+
+                var rows = jsonRows.Select(n =>
+                {
+                    var obj = n?.AsObject();
+                    int dim = obj?["InWhichDimension"] != null ? Convert.ToInt32(obj["InWhichDimension"]!.ToString()) : 1;
+                    return new
+                    {
+                        CenterCode = obj?["CenterCode"]?.ToString() ?? "",
+                        CenterName = obj?["CenterName"]?.ToString() ?? "",
+                        InWhichDimension = dim,
+                        Active = obj?["Active"]?.ToString() ?? "tYES"
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { CenterCode = "CC-OPS-01", CenterName = "Operasional Armada Laut", InWhichDimension = 1, Active = "tYES" },
-                    new { CenterCode = "CC-ENG-02", CenterName = "Engineering & Workshop Maintenance", InWhichDimension = 1, Active = "tYES" },
-                    new { CenterCode = "CC-LOG-03", CenterName = "Logistik & Gudang Transit", InWhichDimension = 1, Active = "tYES" },
-                    new { CenterCode = "CC-VSL-01", CenterName = "Tugboat IBT Pioneer", InWhichDimension = 2, Active = "tYES" },
-                    new { CenterCode = "CC-DOCK-04", CenterName = "Galangan Perbaikan Kapal", InWhichDimension = 2, Active = "tNO" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -497,41 +615,36 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                string queryString = "$select=GroupNumber,PaymentTermsGroupName,NumberOfAdditionalDays,NumberOfAdditionalMonths,GeneralDiscount&$orderby=GroupNumber";
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("PaymentTermsTypes", queryString);
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""GroupNum"" AS ""GroupNumber"", ""PymntGroup"" AS ""PaymentTermsGroupName"", ""ExtraDays"", ""ExtraMonth"" AS ""ExtraMonths"", ""DiscPrcnt"" AS ""DiscountPercent"" 
-                        FROM OCTG ORDER BY ""GroupNum"";"
-                    : @"SELECT GroupNum AS GroupNumber, PymntGroup AS PaymentTermsGroupName, ExtraDays, ExtraMonth AS ExtraMonths, DiscPrcnt AS DiscountPercent 
-                        FROM OCTG ORDER BY GroupNum;";
-
-                var rawRows = await conn.QueryAsync(query);
-                var rows = rawRows.Select(r => new
+                var rows = jsonRows.Select(n =>
                 {
-                    GroupNumber = Convert.ToInt32(r.GroupNumber),
-                    PaymentTermsGroupName = (string)(r.PaymentTermsGroupName ?? $"Term #{r.GroupNumber}"),
-                    ExtraDays = r.ExtraDays != null ? Convert.ToInt32(r.ExtraDays) : 0,
-                    ExtraMonths = r.ExtraMonths != null ? Convert.ToInt32(r.ExtraMonths) : 0,
-                    DiscountPercent = r.DiscountPercent != null ? Convert.ToDecimal(r.DiscountPercent) : 0m
+                    var obj = n?.AsObject();
+                    int grpNum = obj?["GroupNumber"] != null ? Convert.ToInt32(obj["GroupNumber"]!.ToString()) : 0;
+                    int extraDays = obj?["NumberOfAdditionalDays"] != null ? Convert.ToInt32(obj["NumberOfAdditionalDays"]!.ToString()) : 0;
+                    int extraMonths = obj?["NumberOfAdditionalMonths"] != null ? Convert.ToInt32(obj["NumberOfAdditionalMonths"]!.ToString()) : 0;
+                    decimal discount = 0m;
+                    if (obj?["GeneralDiscount"] != null && decimal.TryParse(obj["GeneralDiscount"]!.ToString(), out decimal parsedDisc))
+                    {
+                        discount = parsedDisc;
+                    }
+
+                    return new
+                    {
+                        GroupNumber = grpNum,
+                        PaymentTermsGroupName = obj?["PaymentTermsGroupName"]?.ToString() ?? $"Term #{grpNum}",
+                        ExtraDays = extraDays,
+                        ExtraMonths = extraMonths,
+                        DiscountPercent = discount
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { GroupNumber = 1, PaymentTermsGroupName = "COD / Tunai Langsung", ExtraDays = 0, ExtraMonths = 0, DiscountPercent = 0.0m },
-                    new { GroupNumber = 2, PaymentTermsGroupName = "Net 30 Hari", ExtraDays = 30, ExtraMonths = 0, DiscountPercent = 0.0m },
-                    new { GroupNumber = 3, PaymentTermsGroupName = "Net 60 Hari", ExtraDays = 60, ExtraMonths = 0, DiscountPercent = 0.0m },
-                    new { GroupNumber = 4, PaymentTermsGroupName = "2/10 Net 30", ExtraDays = 30, ExtraMonths = 0, DiscountPercent = 2.0m }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -541,44 +654,30 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                string queryString = "$select=ExpensCode,Name,RevenuesAccount,ExpenseAccount,OutputVATGroup,InputVATGroup,TaxLiable&$orderby=ExpensCode";
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("AdditionalExpenses", queryString);
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""ExpnsCode"" AS ""ExpensCode"", ""ExpnsName"" AS ""Name"", ""RevnAcct"" AS ""RevenuesAccount"", ""ExpnsAcct"" AS ""ExpenseAccount"", ""VatGroup"" AS ""OutputVATGroup"", ""VatGroupI"" AS ""InputVATGroup"", ""TaxLiable"" 
-                        FROM OEXD ORDER BY ""ExpnsCode"";"
-                    : @"SELECT ExpnsCode AS ExpensCode, ExpnsName AS Name, RevnAcct AS RevenuesAccount, ExpnsAcct AS ExpenseAccount, VatGroup AS OutputVATGroup, VatGroupI AS InputVATGroup, TaxLiable 
-                        FROM OEXD ORDER BY ExpnsCode;";
-
-                var rawRows = await conn.QueryAsync(query);
-                var rows = rawRows.Select(r => new
+                var rows = jsonRows.Select(n =>
                 {
-                    ExpensCode = Convert.ToInt32(r.ExpensCode),
-                    Name = (string)(r.Name ?? $"Freight #{r.ExpensCode}"),
-                    RevenuesAccount = (string?)r.RevenuesAccount,
-                    ExpenseAccount = (string?)r.ExpenseAccount,
-                    OutputVATGroup = (string?)r.OutputVATGroup,
-                    InputVATGroup = (string?)r.InputVATGroup,
-                    TaxLiable = (string)(r.TaxLiable ?? "tNO")
+                    var obj = n?.AsObject();
+                    int code = obj?["ExpensCode"] != null ? Convert.ToInt32(obj["ExpensCode"]!.ToString()) : 0;
+                    return new
+                    {
+                        ExpensCode = code,
+                        Name = obj?["Name"]?.ToString() ?? $"Freight #{code}",
+                        RevenuesAccount = obj?["RevenuesAccount"]?.ToString(),
+                        ExpenseAccount = obj?["ExpenseAccount"]?.ToString(),
+                        OutputVATGroup = obj?["OutputVATGroup"]?.ToString(),
+                        InputVATGroup = obj?["InputVATGroup"]?.ToString(),
+                        TaxLiable = obj?["TaxLiable"]?.ToString() ?? "tNO"
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { ExpensCode = 1, Name = "Ongkos Angkut Truk & Ekspedisi Darat (Trucking)", RevenuesAccount = "410101", ExpenseAccount = "510201", OutputVATGroup = "PPN11", InputVATGroup = "PPN11", TaxLiable = "tYES" },
-                    new { ExpensCode = 2, Name = "Freight Pelayaran Kapal & Tongkang (Barge/Tug)", RevenuesAccount = "410102", ExpenseAccount = "510202", OutputVATGroup = "NON_PPN", InputVATGroup = "NON_PPN", TaxLiable = "tNO" },
-                    new { ExpensCode = 3, Name = "Asuransi Pengangkutan Kargo Laut & Darat", RevenuesAccount = "410103", ExpenseAccount = "510203", OutputVATGroup = "PPN11", InputVATGroup = "PPN11", TaxLiable = "tYES" },
-                    new { ExpensCode = 4, Name = "Biaya Bongkar Muat Pelabuhan (Stevedoring & Handling)", RevenuesAccount = "410104", ExpenseAccount = "510204", OutputVATGroup = "PPN11", InputVATGroup = "PPN11", TaxLiable = "tYES" },
-                    new { ExpensCode = 5, Name = "Demurrage & Biaya Penumpukan Kontainer (Storage)", RevenuesAccount = "410105", ExpenseAccount = "510205", OutputVATGroup = "PPN11", InputVATGroup = "PPN11", TaxLiable = "tYES" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -587,46 +686,36 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
-
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""PrjCode"" AS ""Code"", ""PrjName"" AS ""Name"", ""ValidFrom"", ""ValidTo"", ""Active"" 
-                        FROM OPRJ 
-                        WHERE (@Search IS NULL OR ""PrjCode"" LIKE CONCAT('%', @Search, '%') OR ""PrjName"" LIKE CONCAT('%', @Search, '%'))
-                        ORDER BY ""PrjCode"";"
-                    : @"SELECT PrjCode AS Code, PrjName AS Name, ValidFrom, ValidTo, Active 
-                        FROM OPRJ 
-                        WHERE (@Search IS NULL OR PrjCode LIKE '%' + @Search + '%' OR PrjName LIKE '%' + @Search + '%')
-                        ORDER BY PrjCode;";
-
-                var rawRows = await conn.QueryAsync(query, new { Search = search });
-                var rows = rawRows.Select(r => new
+                string queryParams = "$select=Code,Name,ValidFrom,ValidTo,Active&$orderby=Code";
+                if (!string.IsNullOrWhiteSpace(search))
                 {
-                    Code = (string)r.Code,
-                    Name = (string)(r.Name ?? r.Code),
-                    ValidFrom = r.ValidFrom != null ? Convert.ToDateTime(r.ValidFrom).ToString("yyyy-MM-dd") : null,
-                    ValidTo = r.ValidTo != null ? Convert.ToDateTime(r.ValidTo).ToString("yyyy-MM-dd") : null,
-                    Active = (string)(r.Active ?? "tYES")
+                    string safeSearch = search.Trim().Replace("'", "''");
+                    queryParams += $"&$filter=(contains(Code, '{safeSearch}') or contains(Name, '{safeSearch}'))";
+                }
+
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("Projects", queryParams);
+
+                var rows = jsonRows.Select(n =>
+                {
+                    var obj = n?.AsObject();
+                    string? validFrom = obj?["ValidFrom"]?.ToString();
+                    string? validTo = obj?["ValidTo"]?.ToString();
+
+                    return new
+                    {
+                        Code = obj?["Code"]?.ToString() ?? "",
+                        Name = obj?["Name"]?.ToString() ?? "",
+                        ValidFrom = !string.IsNullOrEmpty(validFrom) ? validFrom.Split('T')[0] : null,
+                        ValidTo = !string.IsNullOrEmpty(validTo) ? validTo.Split('T')[0] : null,
+                        Active = obj?["Active"]?.ToString() ?? "tYES"
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { Code = "PRJ-2026-001", Name = "Overhaul Mesin Utama Tugboat Pioneer", ValidFrom = "2026-01-01", ValidTo = "2026-12-31", Active = "tYES" },
-                    new { Code = "PRJ-2026-002", Name = "Pengadaan Fasilitas Terminal Mahakam", ValidFrom = "2026-02-01", ValidTo = "2026-11-30", Active = "tYES" },
-                    new { Code = "PRJ-2026-003", Name = "Drydocking Tongkang Barge Mega 08", ValidFrom = "2026-03-15", ValidTo = "2026-09-30", Active = "tYES" },
-                    new { Code = "PRJ-2026-004", Name = "Modernisasi Sistem Navigasi & IT Kapal", ValidFrom = "2026-01-10", ValidTo = "2026-08-31", Active = "tYES" },
-                    new { Code = "PRJ-2025-099", Name = "Pembangunan Dermaga Jetty 2 (Selesai)", ValidFrom = "2025-01-01", ValidTo = "2025-12-31", Active = "tNO" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -635,36 +724,25 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                string queryString = "$select=Number,GroupName&$orderby=Number";
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("ItemGroups", queryString);
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""ItmsGrpCod"" AS ""Number"", ""ItmsGrpNam"" AS ""GroupName"" FROM OITB ORDER BY ""ItmsGrpCod"";"
-                    : @"SELECT ItmsGrpCod AS Number, ItmsGrpNam AS GroupName FROM OITB ORDER BY ItmsGrpCod;";
-
-                var rawRows = await conn.QueryAsync(query);
-                var rows = rawRows.Select(r => new
+                var rows = jsonRows.Select(n =>
                 {
-                    Number = Convert.ToInt32(r.Number),
-                    GroupName = (string)r.GroupName
+                    var obj = n?.AsObject();
+                    int num = obj?["Number"] != null ? Convert.ToInt32(obj["Number"]!.ToString()) : 0;
+                    return new
+                    {
+                        Number = num,
+                        GroupName = obj?["GroupName"]?.ToString() ?? ""
+                    };
                 }).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { Number = 101, GroupName = "Mechanical & Engine Parts" },
-                    new { Number = 102, GroupName = "Electrical & Navigation Equipment" },
-                    new { Number = 103, GroupName = "Deck Consumables & Paints" },
-                    new { Number = 104, GroupName = "Safety & Lifesaving Appliances" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -673,42 +751,34 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("CustomsGroups", "$select=Code,Name,Number&$orderby=Code");
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                string query = isHanaOrMysql
-                    ? @"SELECT ""Chapter"" AS ""HsCode"", ""Dscription"" AS ""Desc"" 
-                        FROM OCHS 
-                        WHERE (@Search IS NULL OR ""Chapter"" LIKE CONCAT('%', @Search, '%') OR ""Dscription"" LIKE CONCAT('%', @Search, '%'))
-                        ORDER BY ""Chapter"";"
-                    : @"SELECT Chapter AS HsCode, Dscription AS [Desc] 
-                        FROM OCHS 
-                        WHERE (@Search IS NULL OR Chapter LIKE '%' + @Search + '%' OR Dscription LIKE '%' + @Search + '%')
-                        ORDER BY Chapter;";
-
-                var rawRows = await conn.QueryAsync(query, new { Search = search });
-                var rows = rawRows.Select(r => new
+                var mappedRows = jsonRows.Select(n =>
                 {
-                    HsCode = (string)r.HsCode,
-                    Desc = (string)(r.Desc ?? string.Empty),
-                    Lartas = "tidak_lartas"
-                }).ToList();
+                    var obj = n?.AsObject();
+                    string hsCode = obj?["Number"]?.ToString() ?? obj?["Code"]?.ToString() ?? "";
+                    string name = obj?["Name"]?.ToString() ?? "";
+                    return new
+                    {
+                        HsCode = hsCode,
+                        Desc = name,
+                        Lartas = "tidak_lartas"
+                    };
+                });
 
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    mappedRows = mappedRows.Where(r =>
+                        r.HsCode.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                        r.Desc.Contains(search, StringComparison.OrdinalIgnoreCase));
+                }
+
+                var rows = mappedRows.ToList();
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { HsCode = "8481.80.90", Desc = "Kran & Katup Pipa Kapal", Lartas = "tidak_lartas" },
-                    new { HsCode = "8501.52.00", Desc = "Motor Listrik AC 3-Phase", Lartas = "lartas" },
-                    new { HsCode = "8409.99.00", Desc = "Suku Cadang Mesin Diesel Kapal", Lartas = "tidak_lartas" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
 
@@ -717,71 +787,45 @@ namespace SOLTIUS_Web_API_Add_On.Controllers
         {
             try
             {
-                DBConfig config = _configurationService.GetDatabaseConfig();
-                using DbConnection conn = _connectionFactory.CreateConnection(config);
-                await conn.OpenAsync();
+                var jsonRows = await _sapMasterDataService.GetODataCollectionAsync("SOL_PNUM_H");
 
-                bool isHanaOrMysql = config.DBType == DatabaseType.MySql || 
-                                     (!string.IsNullOrEmpty(config.Server) && config.Server.IndexOf("HANA", StringComparison.OrdinalIgnoreCase) >= 0);
+                var mappedRows = jsonRows.Select(n =>
+                {
+                    var obj = n?.AsObject();
+                    int docEntry = obj?["DocEntry"] != null ? Convert.ToInt32(obj["DocEntry"]!.ToString()) : 0;
+                    string partNumber = obj?["U_SOL_PartNumber"]?.ToString() ?? "";
+                    string description = obj?["U_SOL_Description"]?.ToString() ?? "";
+                    string? itemCode = null;
+                    if (obj?["SOL_PNUM_DLines"] is JsonArray lines && lines.Count > 0)
+                    {
+                        itemCode = lines[0]?["U_SOL_ItemCode"]?.ToString();
+                    }
+
+                    return new
+                    {
+                        DocEntry = docEntry,
+                        PartNumber = partNumber,
+                        Description = description,
+                        ItemCode = itemCode
+                    };
+                });
+
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    mappedRows = mappedRows.Where(r =>
+                        r.PartNumber.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                        r.Description.Contains(search, StringComparison.OrdinalIgnoreCase));
+                }
 
                 int topCount = Math.Clamp(top, 1, 1000);
                 int skipCount = Math.Max(0, skip);
-                string query;
-                if (isHanaOrMysql)
-                {
-                    query = @"
-                        SELECT 
-                            H.""DocEntry"", 
-                            H.""U_SOL_PartNumber"" AS ""PartNumber"", 
-                            H.""U_SOL_Description"" AS ""Description"",
-                            D.""U_SOL_ItemCode"" AS ""ItemCode""
-                        FROM ""@SOL_PNUM_H"" H
-                        LEFT JOIN ""@SOL_PNUM_D"" D ON H.""DocEntry"" = D.""DocEntry""
-                        WHERE (@Search IS NULL OR H.""U_SOL_PartNumber"" LIKE CONCAT('%', @Search, '%') OR H.""U_SOL_Description"" LIKE CONCAT('%', @Search, '%'))
-                        ORDER BY H.""DocEntry""
-                        LIMIT " + topCount + @" OFFSET " + skipCount + @";";
-                }
-                else
-                {
-                    query = @"
-                        SELECT TOP (" + (topCount + skipCount) + @")
-                            H.DocEntry, 
-                            H.U_SOL_PartNumber AS PartNumber, 
-                            H.U_SOL_Description AS Description,
-                            D.U_SOL_ItemCode AS ItemCode
-                        FROM [@SOL_PNUM_H] H
-                        LEFT JOIN [@SOL_PNUM_D] D ON H.DocEntry = D.DocEntry
-                        WHERE (@Search IS NULL OR H.U_SOL_PartNumber LIKE '%' + @Search + '%' OR H.U_SOL_Description LIKE '%' + @Search + '%')
-                        ORDER BY H.DocEntry;";
-                }
-
-                var rawRows = await conn.QueryAsync(query, new { Search = search });
-                var mappedRows = rawRows.Select(r => new
-                {
-                    DocEntry = Convert.ToInt32(r.DocEntry),
-                    PartNumber = (string)(r.PartNumber ?? string.Empty),
-                    Description = (string)(r.Description ?? string.Empty),
-                    ItemCode = (string?)r.ItemCode
-                });
-
-                if (!isHanaOrMysql && skipCount > 0)
-                {
-                    mappedRows = mappedRows.Skip(skipCount).Take(topCount);
-                }
-
-                var rows = mappedRows.ToList();
+                var rows = mappedRows.Skip(skipCount).Take(topCount).ToList();
 
                 return Ok(new { success = true, count = rows.Count, data = rows, value = rows });
             }
             catch (Exception ex)
             {
-                var fallback = new[]
-                {
-                    new { DocEntry = 1, PartNumber = "PN-WARTSILA-001", Description = "Main Engine Cylinder Head Gasket", ItemCode = (string?)"ITM-003" },
-                    new { DocEntry = 2, PartNumber = "PN-CAT-3512B-01", Description = "Fuel Injector Nozzle Caterpillar", ItemCode = (string?)"ITM-001" },
-                    new { DocEntry = 3, PartNumber = "PN-YANMAR-6EY-01", Description = "Oil Filter Cartridge Yanmar", ItemCode = (string?)"ITM-002" }
-                };
-                return Ok(new { success = true, isFallback = true, message = "Integration Hub Staging Data Mode: " + ex.Message, data = fallback, value = fallback });
+                return StatusCode(500, new { success = false, message = "SAP Service Layer query failed: " + ex.Message });
             }
         }
     }

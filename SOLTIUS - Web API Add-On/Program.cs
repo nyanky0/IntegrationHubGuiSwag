@@ -200,15 +200,10 @@ try
     string logUser = Environment.GetEnvironmentVariable("LOG_DB_USER") ?? logDb?.UserName ?? "";
     string logPass = Environment.GetEnvironmentVariable("LOG_DB_PASS") ?? logDb?.Password ?? "";
 
-    if (logServer.StartsWith("${") || string.IsNullOrWhiteSpace(logServer))
+    if (logServer.StartsWith("${") || string.IsNullOrWhiteSpace(logServer) || string.IsNullOrWhiteSpace(logPass))
     {
-        if (builder.Environment.IsDevelopment())
-        {
-            logServer = "localhost";
-            logDbName = "NYANKYO";
-            logUser = "sa";
-            logPass = "P@ssw0rd";
-        }
+        // No hardcoded credentials permitted. If credentials are not provided via environment or config, do not initialize log connection.
+        logConnStr = null;
     }
 
     if (!string.IsNullOrWhiteSpace(logServer) && !string.IsNullOrWhiteSpace(logDbName) && !logServer.StartsWith("${"))
@@ -240,6 +235,13 @@ builder.Services.AddTransient<MySqlDatabaseInitializer>();
 builder.Services.AddTransient<SqlServerDatabaseInitializer>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<IPurchaseOrderRepository, PurchaseOrderRepository>();
+
+// SAP Service Layer Master Data Service
+builder.Services.AddHttpClient<SOLTIUS_Web_API_Add_On.Services.Sap.ISapMasterDataService, SOLTIUS_Web_API_Add_On.Services.Sap.SapMasterDataService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+
 
 // ============================================================
 // Swagger (P0: only in Development)

@@ -7,10 +7,10 @@ using System.Collections.Generic;
 namespace SOLTIUS_Scheduler_Add_On.Services
 {
     /// <summary>
-    /// Engine sinkronisasi Purchase Order dari staging ke SAP via SAP Business One Service Layer.
-    /// Mematuhi larangan DI API & direct SQL, proteksi DocEntry 2, pemetaan vendor VL, dan validasi BPL 3 ↔ WH-IBT.
+    /// Engine sinkronisasi Goods Return (ORPD - PurchaseReturns) dari staging ke SAP via Service Layer.
+    /// Mematuhi larangan DI API & direct SQL, pemetaan vendor VL, dan validasi BPL 3 ↔ WH-IBT.
     /// </summary>
-    public static class PurchaseOrderSyncRunner
+    public static class GoodsReturnSyncRunner
     {
         public static int RunPendingSync(AppConfig config, bool isDryRun)
         {
@@ -23,52 +23,44 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     "Staging hanya mendukung SQL Server. Profil aktif memakai tipe '" + config.ExternalDBType + "'.");
 
             var dbService = new DatabaseService(connString);
-            List<PendingPurchaseOrder> orders = dbService.LoadPendingPurchaseOrders();
+            List<PendingPurchaseOrder> returns = dbService.LoadPendingGoodsReturns();
 
-            if (orders.Count == 0) return 0;
+            if (returns.Count == 0) return 0;
 
             int failedCount = 0;
             using (var slClient = isDryRun ? null : new SapServiceLayerClient(config))
             {
-                foreach (var order in orders)
+                foreach (var ret in returns)
                 {
-                    // --- Protect PO Uji DocEntry 2 (Jangan reprocess PO uji DocEntry 2) ---
-                    if (order.WebTxNumber == "PO\\IBT\\HOF\\269901" || order.HeaderId == 7)
+                    // Skip if retry limit exceeded
+                    if (dbService.IsGoodsReturnRetryLimitExceeded(ret.HeaderId))
                     {
-                        Console.WriteLine($"[PO Sync] Skipping test PO DocEntry 2 (WebTxNumber: {order.WebTxNumber}, SOL_ID: {order.HeaderId})");
-                        dbService.UpdatePurchaseOrderStatus(order.HeaderId, 1, null, "2");
-                        continue;
-                    }
-
-                    // --- Skip if retry limit exceeded ---
-                    if (dbService.IsPurchaseOrderRetryLimitExceeded(order.HeaderId))
-                    {
-                        dbService.MarkPurchaseOrderAsExceededRetryLimit(order.HeaderId);
-                        LogSync(dbService, order, "Failed", null, "Skipped: max retry limit exceeded");
+                        dbService.MarkGoodsReturnAsExceededRetryLimit(ret.HeaderId);
+                        LogSync(dbService, ret, "Failed", null, "Skipped: max retry limit exceeded");
                         continue;
                     }
 
                     try
                     {
-                        // 1. Resolve vendor code mapping (e.g. V-MARINDO-01 -> VL-00017)
-                        string resolvedCardCode = dbService.ResolveVendorCardCode(order.CardCode);
+                        // 1. Resolve vendor code mapping
+                        string resolvedCardCode = dbService.ResolveVendorCardCode(ret.CardCode);
 
-                        // 2. Validate branch and warehouse for all lines (e.g. Branch 3 ↔ WH-IBT, no cross-branch fallback)
-                        int bplId = 3; // PT Indobaruna Bulk Transport
-                        foreach (var line in order.Lines)
+                        // 2. Validate branch and warehouse pairing
+                        int bplId = 3;
+                        foreach (var line in ret.Lines)
                         {
                             SapServiceLayerClient.ValidateBranchAndWarehouse(bplId, line.Warehouse);
                         }
 
                         if (isDryRun)
                         {
-                            LogSync(dbService, order, "Success", "DRY-RUN", "Validasi berhasil (Mode Simulasi)");
+                            LogSync(dbService, ret, "Success", "DRY-RUN", "Validasi Goods Return berhasil (Mode Simulasi)");
                         }
                         else
                         {
                             // 3. Build Service Layer payload
                             var linesPayload = new List<object>();
-                            foreach (var line in order.Lines)
+                            foreach (var line in ret.Lines)
                             {
                                 var lineObj = new Dictionary<string, object>
                                 {
@@ -88,31 +80,31 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                                 linesPayload.Add(lineObj);
                             }
 
-                            var poPayload = new Dictionary<string, object>
+                            var returnPayload = new Dictionary<string, object>
                             {
                                 { "CardCode", resolvedCardCode },
-                                { "DocDate", order.DocDate.ToString("yyyy-MM-dd") },
-                                { "DocDueDate", (order.DocDueDate == DateTime.MinValue ? DateTime.Now.AddDays(7) : order.DocDueDate).ToString("yyyy-MM-dd") },
-                                { "TaxDate", order.TaxDate.ToString("yyyy-MM-dd") },
+                                { "DocDate", ret.DocDate.ToString("yyyy-MM-dd") },
+                                { "DocDueDate", (ret.DocDueDate == DateTime.MinValue ? DateTime.Now.AddDays(7) : ret.DocDueDate).ToString("yyyy-MM-dd") },
+                                { "TaxDate", ret.TaxDate.ToString("yyyy-MM-dd") },
                                 { "BPL_IDAssignedToInvoice", bplId },
-                                { "Comments", string.IsNullOrWhiteSpace(order.Remarks) ? $"Sync via SOLTIUS Scheduler ({order.WebTxNumber})" : order.Remarks },
+                                { "Comments", string.IsNullOrWhiteSpace(ret.Remarks) ? $"Goods Return Sync via SOLTIUS Scheduler ({ret.WebTxNumber})" : ret.Remarks },
                                 { "DocumentLines", linesPayload }
                             };
 
-                            if (!string.IsNullOrEmpty(order.WebTxNumber))
+                            if (!string.IsNullOrEmpty(ret.WebTxNumber))
                             {
-                                poPayload["U_SOL_WebTxNumber"] = order.WebTxNumber;
+                                returnPayload["U_SOL_WebTxNumber"] = ret.WebTxNumber;
                             }
-                            if (order.WebTxId.HasValue)
+                            if (ret.WebTxId.HasValue)
                             {
-                                poPayload["U_SOL_WebTxId"] = order.WebTxId.Value.ToString();
+                                returnPayload["U_SOL_WebTxId"] = ret.WebTxId.Value.ToString();
                             }
 
-                            // 4. POST to Service Layer & read back DocEntry
-                            string docEntry = slClient.PostDocument("PurchaseOrders", poPayload);
+                            // 4. POST to Service Layer
+                            string docEntry = slClient.PostDocument("PurchaseReturns", returnPayload);
 
-                            LogSync(dbService, order, "Success", docEntry, "-");
-                            dbService.UpdatePurchaseOrderStatus(order.HeaderId, 1, null, docEntry);
+                            LogSync(dbService, ret, "Success", docEntry, "-");
+                            dbService.UpdateGoodsReturnStatus(ret.HeaderId, 1, null, docEntry);
 
                             // Asynchronous Webhook Callback ke Web Laravel
                             try
@@ -123,11 +115,11 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                                     WebhookCallbackService.SendDocEntryCallbackAsync(
                                         schedConfig.WebhookUrl,
                                         schedConfig.WebhookSecret,
-                                        "Purchase Order",
+                                        "Goods Return",
                                         docEntry,
                                         docEntry,
-                                        order.WebTxNumber,
-                                        order.WebTxId
+                                        ret.WebTxNumber,
+                                        ret.WebTxId
                                     );
                                 }
                             }
@@ -138,16 +130,16 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     {
                         failedCount++;
 
-                        dbService.UpdatePurchaseOrderStatus(order.HeaderId, 2, ex.Message);
+                        dbService.UpdateGoodsReturnStatus(ret.HeaderId, 2, ex.Message);
 
                         string errMsg = ex.Message;
-                        if (dbService.IsPurchaseOrderRetryLimitExceeded(order.HeaderId))
+                        if (dbService.IsGoodsReturnRetryLimitExceeded(ret.HeaderId))
                         {
                             errMsg = "[DEAD-LETTER] " + ex.Message;
-                            dbService.MarkPurchaseOrderAsExceededRetryLimit(order.HeaderId);
+                            dbService.MarkGoodsReturnAsExceededRetryLimit(ret.HeaderId);
                         }
 
-                        LogSync(dbService, order, "Failed", null, errMsg);
+                        LogSync(dbService, ret, "Failed", null, errMsg);
                     }
                 }
             }
@@ -155,19 +147,19 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             return failedCount;
         }
 
-        private static void LogSync(DatabaseService dbService, PendingPurchaseOrder order, string status, string docEntry, string errorMessage)
+        private static void LogSync(DatabaseService dbService, PendingPurchaseOrder ret, string status, string docEntry, string errorMessage)
         {
             try
             {
                 var log = new SyncLogModel
                 {
-                    DocType = "Purchase Order",
+                    DocType = "Goods Return",
                     DocEntry = docEntry ?? "",
-                    CardCode = order.CardCode ?? "",
-                    ItemCode = order.Lines.Count > 0 ? order.Lines[0].ItemCode : "",
-                    Quantity = order.Lines.Count > 0 ? (double)order.Lines[0].Quantity : 0,
-                    Price = order.Lines.Count > 0 ? (double)order.Lines[0].Price : 0,
-                    WarehouseCode = order.Lines.Count > 0 ? order.Lines[0].Warehouse : "",
+                    CardCode = ret.CardCode ?? "",
+                    ItemCode = ret.Lines.Count > 0 ? ret.Lines[0].ItemCode : "",
+                    Quantity = ret.Lines.Count > 0 ? (double)ret.Lines[0].Quantity : 0,
+                    Price = ret.Lines.Count > 0 ? (double)ret.Lines[0].Price : 0,
+                    WarehouseCode = ret.Lines.Count > 0 ? ret.Lines[0].Warehouse : "",
                     Status = status,
                     ErrorSource = status == "Failed" ? "SAP Service Layer" : "-",
                     ErrorMessage = errorMessage ?? "-",

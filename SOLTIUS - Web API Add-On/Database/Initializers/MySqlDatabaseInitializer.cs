@@ -21,7 +21,51 @@ namespace SOLTIUS_Web_API_Add_On.Database.Initializers
             await CreatePurchaseOrderHeader(connection);
             await CreatePurchaseOrderDetail(connection);
             await CreateGoodsReceiptPOTables(connection);
+            await CreateGoodsReturnTables(connection);
             await CreateStockTransferTables(connection);
+        }
+
+        private async Task CreateGoodsReturnTables(MySqlConnection connection)
+        {
+            string sql = @"
+            CREATE TABLE IF NOT EXISTS SOL_GRE_HEADER
+            (
+                SOL_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                SOL_CARDCODE VARCHAR(30) NOT NULL,
+                SOL_CARDNAME VARCHAR(200) NOT NULL,
+                SOL_DOCDATE DATETIME NOT NULL,
+                SOL_DOCDUEDATE DATETIME NOT NULL,
+                SOL_TAXDATE DATETIME NOT NULL,
+                SOL_REMARKS VARCHAR(254),
+                SOL_WEB_TX_NUMBER VARCHAR(50) NULL,
+                SOL_WEB_TX_ID BIGINT NULL,
+                SOL_UDF_DATA LONGTEXT NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT 0,
+                SOL_RETRYCOUNT INT NOT NULL DEFAULT 0,
+                SOL_DOCENTRY VARCHAR(50),
+                SOL_CREATED_AT DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                SOL_UPDATED_AT DATETIME,
+                SOL_PROCESSED_AT DATETIME,
+                SOL_ERRORMESSAGE TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS SOL_GRE_DETAIL
+            (
+                SOL_ID BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                SOL_HEADER_ID BIGINT NOT NULL,
+                SOL_LINENUM INT NOT NULL,
+                SOL_ITEMCODE VARCHAR(30) NOT NULL,
+                SOL_ITEMNAME VARCHAR(200) NOT NULL,
+                SOL_WAREHOUSE VARCHAR(20),
+                SOL_QUANTITY DECIMAL(19,6) NOT NULL,
+                SOL_PRICE DECIMAL(19,6),
+                SOL_VAT_GROUP VARCHAR(20),
+                SOL_WEB_LINE_ID BIGINT NULL,
+                SOL_UDF_DATA LONGTEXT NULL,
+                SOL_PROCESS_STATUS TINYINT NOT NULL DEFAULT 0,
+                SOL_CREATED_AT DATETIME DEFAULT CURRENT_TIMESTAMP
+            );";
+            await connection.ExecuteAsync(sql);
         }
 
         private async Task CreateGoodsReceiptPOTables(MySqlConnection connection)

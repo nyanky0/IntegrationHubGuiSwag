@@ -116,6 +116,10 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 {
                     lines = _dbService.LoadStockTransferLineDetails(_header.HeaderId);
                 }
+                else if (_header.DocType == "Goods Return" || _header.DocType == "GRE")
+                {
+                    lines = _dbService.LoadGoodsReturnLineDetails(_header.HeaderId);
+                }
             }
 
             SetupGridColumns();

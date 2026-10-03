@@ -272,6 +272,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             if (chkPO != null) this.chkPO.CheckedChanged += (s, e) => RefreshPendingGrid();
             if (chkGRPO != null) this.chkGRPO.CheckedChanged += (s, e) => RefreshPendingGrid();
             if (chkTransfer != null) this.chkTransfer.CheckedChanged += (s, e) => RefreshPendingGrid();
+            if (chkGRE != null) this.chkGRE.CheckedChanged += (s, e) => RefreshPendingGrid();
             if (chkSL != null) this.chkSL.CheckedChanged += (s, e) => RefreshPendingGrid();
 
             // Kontrol di Tab Antrean Pending
@@ -521,6 +522,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             bool includePO = chkPO?.Checked ?? false;
             bool includeGRPO = chkGRPO?.Checked ?? false;
             bool includeTransfer = chkTransfer?.Checked ?? false;
+            bool includeGRE = chkGRE?.Checked ?? false;
             bool includeSL = chkSL?.Checked ?? false;
 
             // Update label filter info
@@ -528,6 +530,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             if (includePO) activeModules.Add("Purchase Order");
             if (includeGRPO) activeModules.Add("Goods Receipt PO");
             if (includeTransfer) activeModules.Add("Stock Transfer");
+            if (includeGRE) activeModules.Add("Goods Return");
             if (includeSL) activeModules.Add("Service Layer");
 
             if (lblPendingFilterInfo != null)
@@ -539,12 +542,12 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 }
                 else
                 {
-                    lblPendingFilterInfo.Text = "Belum ada modul dipilih pada Tab 1 (Centang Purchase Order / Goods Receipt PO / Stock Transfer / Service Layer).";
+                    lblPendingFilterInfo.Text = "Belum ada modul dipilih pada Tab 1 (Centang Purchase Order / Goods Receipt PO / Stock Transfer / Goods Return / Service Layer).";
                     lblPendingFilterInfo.ForeColor = Color.DarkRed;
                 }
             }
 
-            if (!includePO && !includeGRPO && !includeTransfer && !includeSL)
+            if (!includePO && !includeGRPO && !includeTransfer && !includeGRE && !includeSL)
             {
                 masterPendingList = new List<PendingQueueDocModel>();
             }
@@ -552,7 +555,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             {
                 try
                 {
-                    masterPendingList = dbService.LoadUnsyncedDocuments(includePO, includeGRPO, includeTransfer, includeSL);
+                    masterPendingList = dbService.LoadUnsyncedDocuments(includePO, includeGRPO, includeTransfer, includeSL, includeGRE);
                 }
                 catch (Exception ex)
                 {
@@ -718,6 +721,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             var poIds = selectedItems.Where(x => x.DocType == "Purchase Order").Select(x => x.HeaderId).ToList();
             var grpoIds = selectedItems.Where(x => x.DocType == "Goods Receipt PO").Select(x => x.HeaderId).ToList();
             var transferIds = selectedItems.Where(x => x.DocType == "Stock Transfer").Select(x => x.HeaderId).ToList();
+            var greIds = selectedItems.Where(x => x.DocType == "Goods Return").Select(x => x.HeaderId).ToList();
 
             var pendingPurchaseOrders = new List<PendingPurchaseOrder>();
             if (poIds.Count > 0)
@@ -764,7 +768,22 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 }
             }
 
-            int totalDocCount = pendingPurchaseOrders.Count + pendingGoodsReceiptPOs.Count + pendingStockTransfers.Count;
+            var pendingGoodsReturns = new List<PendingPurchaseOrder>();
+            if (greIds.Count > 0)
+            {
+                try
+                {
+                    pendingGoodsReturns = dbService.LoadPendingGoodsReturnsByIds(greIds);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Gagal memuat detail Goods Return terpilih: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    SetUIState(true);
+                    return;
+                }
+            }
+
+            int totalDocCount = pendingPurchaseOrders.Count + pendingGoodsReceiptPOs.Count + pendingStockTransfers.Count + pendingGoodsReturns.Count;
             if (totalDocCount == 0)
             {
                 MessageBox.Show("Tidak ada dokumen yang valid untuk disinkronisasi.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -778,7 +797,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             try
             {
-                failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingPurchaseOrders, pendingGoodsReceiptPOs, pendingStockTransfers, isDryRun, progress));
+                failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingPurchaseOrders, pendingGoodsReceiptPOs, pendingStockTransfers, pendingGoodsReturns, isDryRun, progress));
 
                 RefreshPendingGrid();
                 LoadLogFromDatabase();
@@ -811,7 +830,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 return;
             }
 
-            if (!chkPO.Checked && !chkGRPO.Checked && !chkTransfer.Checked && !chkSL.Checked && !chkLogData.Checked)
+            if (!chkPO.Checked && !chkGRPO.Checked && !chkTransfer.Checked && !(chkGRE?.Checked ?? false) && !chkSL.Checked && !chkLogData.Checked)
             {
                 MessageBox.Show("Pilih minimal satu kategori sinkronisasi.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
                 return;
@@ -819,7 +838,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             if (chkSL.Checked)
             {
-                MessageBox.Show("Sinkronisasi Service Layer belum diimplementasikan. Centang 'Purchase Order', 'Goods Receipt PO', atau 'Stock Transfer' untuk sekarang.",
+                MessageBox.Show("Sinkronisasi Service Layer belum diimplementasikan. Centang 'Purchase Order', 'Goods Receipt PO', 'Stock Transfer', atau 'Goods Return' untuk sekarang.",
                                 "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
@@ -849,9 +868,9 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             if (chkLogData.Checked) { masterLogList.Clear(); RefreshGrid(); }
 
-            if (!chkPO.Checked && !chkGRPO.Checked && !chkTransfer.Checked)
+            if (!chkPO.Checked && !chkGRPO.Checked && !chkTransfer.Checked && !(chkGRE?.Checked ?? false))
             {
-                MessageBox.Show("Pilih minimal satu modul untuk disinkronisasi (Purchase Order, Goods Receipt PO, atau Stock Transfer).", "Peringatan", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Pilih minimal satu modul untuk disinkronisasi (Purchase Order, Goods Receipt PO, Stock Transfer, atau Goods Return).", "Peringatan", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 SetUIState(true);
                 return;
             }
@@ -911,7 +930,22 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                 }
             }
 
-            int totalDocCount = pendingPurchaseOrders.Count + pendingGoodsReceiptPOs.Count + pendingStockTransfers.Count;
+            var pendingGoodsReturns = new List<PendingPurchaseOrder>();
+            if (chkGRE != null && chkGRE.Checked)
+            {
+                try
+                {
+                    pendingGoodsReturns = dbService.LoadPendingGoodsReturns();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Gagal memuat data Goods Return pending dari staging: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    SetUIState(true);
+                    return;
+                }
+            }
+
+            int totalDocCount = pendingPurchaseOrders.Count + pendingGoodsReceiptPOs.Count + pendingStockTransfers.Count + pendingGoodsReturns.Count;
             if (totalDocCount == 0)
             {
                 MessageBox.Show("Tidak ada dokumen pending di staging (process_status = 0).", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -925,7 +959,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
             try
             {
-                failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingPurchaseOrders, pendingGoodsReceiptPOs, pendingStockTransfers, isDryRun, progress));
+                failedCount = await Task.Run(() => ProcessSyncInSequence(activeConfig, dbService, pendingPurchaseOrders, pendingGoodsReceiptPOs, pendingStockTransfers, pendingGoodsReturns, isDryRun, progress));
 
                 LoadLogFromDatabase();
                 RefreshPendingGrid();
@@ -950,10 +984,11 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             List<PendingPurchaseOrder> poOrders,
             List<PendingPurchaseOrder> grpoOrders,
             List<PendingPurchaseOrder> transferOrders,
+            List<PendingPurchaseOrder> greOrders,
             bool isDryRun, IProgress<int> progress)
         {
             int failedCount = 0;
-            int totalTasks = poOrders.Count + grpoOrders.Count + transferOrders.Count;
+            int totalTasks = poOrders.Count + grpoOrders.Count + transferOrders.Count + greOrders.Count;
             if (totalTasks == 0) return 0;
             int completedTasks = 0;
 
@@ -1051,6 +1086,35 @@ namespace SOLTIUS_Scheduler_Add_On.UI
                             failedCount++;
                             LogSyncResult(dbService, "Stock Transfer", transfer, "Failed", null, ex.Message);
                             dbService?.UpdateStockTransferStatus(transfer.HeaderId, 2, ex.Message);
+                        }
+
+                        completedTasks++;
+                        int currentProgress = 30 + (int)((completedTasks / (float)totalTasks) * 70);
+                        progress.Report(Math.Min(currentProgress, 100));
+                    }
+
+                    // 4. Sync Goods Return
+                    foreach (var gre in greOrders)
+                    {
+                        try
+                        {
+                            if (isDryRun)
+                            {
+                                System.Threading.Thread.Sleep(100);
+                                LogSyncResult(dbService, "Goods Return", gre, "Success", "DRY-RUN", "Validasi berhasil (Mode Simulasi)");
+                            }
+                            else
+                            {
+                                string docEntry = sapService.ExecuteGoodsReturnSync(gre);
+                                LogSyncResult(dbService, "Goods Return", gre, "Success", docEntry, "-");
+                                dbService?.UpdateGoodsReturnStatus(gre.HeaderId, 1, null, docEntry);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            failedCount++;
+                            LogSyncResult(dbService, "Goods Return", gre, "Failed", null, ex.Message);
+                            dbService?.UpdateGoodsReturnStatus(gre.HeaderId, 2, ex.Message);
                         }
 
                         completedTasks++;

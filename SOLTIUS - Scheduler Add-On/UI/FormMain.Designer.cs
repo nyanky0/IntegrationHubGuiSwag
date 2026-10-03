@@ -45,6 +45,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.labelGRPO = new System.Windows.Forms.Label();
             this.chkTransfer = new System.Windows.Forms.CheckBox();
             this.labelTransfer = new System.Windows.Forms.Label();
+            this.chkGRE = new System.Windows.Forms.CheckBox();
+            this.labelGRE = new System.Windows.Forms.Label();
             this.chkLogData = new System.Windows.Forms.CheckBox();
             this.label7 = new System.Windows.Forms.Label();
             this.chkAll1 = new System.Windows.Forms.CheckBox();
@@ -252,6 +254,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // 
             // grpBox1_1
             // 
+            this.grpBox1_1.Controls.Add(this.chkGRE);
+            this.grpBox1_1.Controls.Add(this.labelGRE);
             this.grpBox1_1.Controls.Add(this.chkSL);
             this.grpBox1_1.Controls.Add(this.label6);
             this.grpBox1_1.Controls.Add(this.chkTransfer);
@@ -335,10 +339,32 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.labelTransfer.TabIndex = 19;
             this.labelTransfer.Text = "-OWTR";
             // 
+            // chkGRE
+            // 
+            this.chkGRE.AutoSize = true;
+            this.chkGRE.Location = new System.Drawing.Point(8, 104);
+            this.chkGRE.Margin = new System.Windows.Forms.Padding(4);
+            this.chkGRE.Name = "chkGRE";
+            this.chkGRE.Size = new System.Drawing.Size(148, 20);
+            this.chkGRE.TabIndex = 22;
+            this.chkGRE.Text = "Sync Goods Return";
+            this.chkGRE.UseVisualStyleBackColor = true;
+            // 
+            // labelGRE
+            // 
+            this.labelGRE.AutoSize = true;
+            this.labelGRE.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelGRE.Location = new System.Drawing.Point(328, 104);
+            this.labelGRE.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.labelGRE.Name = "labelGRE";
+            this.labelGRE.Size = new System.Drawing.Size(61, 17);
+            this.labelGRE.TabIndex = 23;
+            this.labelGRE.Text = "-ORPD";
+            // 
             // chkSL
             // 
             this.chkSL.AutoSize = true;
-            this.chkSL.Location = new System.Drawing.Point(8, 104);
+            this.chkSL.Location = new System.Drawing.Point(8, 132);
             this.chkSL.Margin = new System.Windows.Forms.Padding(4);
             this.chkSL.Name = "chkSL";
             this.chkSL.Size = new System.Drawing.Size(145, 20);
@@ -350,7 +376,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             // 
             this.label6.AutoSize = true;
             this.label6.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label6.Location = new System.Drawing.Point(328, 104);
+            this.label6.Location = new System.Drawing.Point(328, 132);
             this.label6.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.label6.Name = "label6";
             this.label6.Size = new System.Drawing.Size(45, 17);
@@ -923,6 +949,8 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private System.Windows.Forms.Label labelGRPO;
         private System.Windows.Forms.CheckBox chkTransfer;
         private System.Windows.Forms.Label labelTransfer;
+        private System.Windows.Forms.CheckBox chkGRE;
+        private System.Windows.Forms.Label labelGRE;
         private System.Windows.Forms.CheckBox chkLogData;
         private System.Windows.Forms.Label label7;
         internal System.Windows.Forms.CheckBox chkAll1;

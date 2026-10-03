@@ -13,6 +13,9 @@ namespace SOLTIUS_Scheduler_Add_On.Services
     /// </summary>
     public class SyncSchedulerEngine
     {
+        private static readonly Lazy<SyncSchedulerEngine> _instance = new Lazy<SyncSchedulerEngine>(() => new SyncSchedulerEngine());
+        public static SyncSchedulerEngine Instance => _instance.Value;
+
         private readonly object _syncLock = new object();
         private System.Threading.Timer _timer;
         private bool _running;
@@ -82,6 +85,21 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             WriteLog("Scheduler dihentikan.");
         }
 
+        /// <summary>
+        /// Restart atau update interval timer secara dinamis saat konfigurasi diubah tanpa harus restart aplikasi.
+        /// </summary>
+        public void RestartIfRunning(SchedulerConfig config)
+        {
+            lock (_syncLock)
+            {
+                if (!_running) return;
+            }
+
+            Stop();
+            Start(config);
+            WriteLog($"Scheduler timer diperbarui secara dinamis ke Mode={config.Mode}, interval={config.ActiveIntervalSeconds}s.");
+        }
+
         /// <summary>Jalankan sinkronisasi sekali, tidak peduli interval.</summary>
         public void RunNow()
         {
@@ -104,9 +122,9 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                 SchedulerConfig config = SchedulerConfig.Load();
                 WriteLog($"Cycle dimulai. Profil aktif: {new ConfigService().GetActiveProfileName() ?? "-"}");
 
-                if (!config.SyncPurchaseOrder && !config.SyncGoodsReceiptPO && !config.SyncStockTransfer && !config.SyncServiceLayer)
+                if (!config.SyncPurchaseOrder && !config.SyncGoodsReceiptPO && !config.SyncStockTransfer && !config.SyncGoodsReturn && !config.SyncServiceLayer)
                 {
-                    WriteLog("Semua fungsi mati (Purchase Order, Goods Receipt PO, Stock Transfer & Service Layer nonaktif) — cycle dilewati.");
+                    WriteLog("Semua fungsi mati (Purchase Order, Goods Receipt PO, Stock Transfer, Goods Return & Service Layer nonaktif) — cycle dilewati.");
                     return;
                 }
 
@@ -145,7 +163,16 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                         : $"Sync Stock Transfer selesai — {transferFailed} dokumen gagal.");
                 }
 
-                // 4. Two-Way Status Reconciliation (Downsync dari SAP B1 ke Web App)
+                if (config.SyncGoodsReturn)
+                {
+                    int greFailed = GoodsReturnSyncRunner.RunPendingSync(runnerConfig, isDryRun: false);
+                    failed += greFailed;
+                    WriteLog(greFailed == 0
+                        ? "Sync Goods Return selesai — semua dokumen pending tersinkronisasi."
+                        : $"Sync Goods Return selesai — {greFailed} dokumen gagal.");
+                }
+
+                // 5. Two-Way Status Reconciliation (Downsync dari SAP B1 ke Web App)
                 if (config.EnableReconciliation)
                 {
                     try

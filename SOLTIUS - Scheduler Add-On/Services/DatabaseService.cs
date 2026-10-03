@@ -384,6 +384,196 @@ namespace SOLTIUS_Scheduler_Add_On.Services
         }
 
         /// <summary>
+        /// Mengambil Goods Return pending dari tabel staging (SOL_PROCESS_STATUS = 0).
+        /// </summary>
+        public List<PendingPurchaseOrder> LoadPendingGoodsReturns()
+        {
+            var result = new List<PendingPurchaseOrder>();
+            if (string.IsNullOrEmpty(_connectionString)) return result;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    string query = @"
+                        SELECT h.SOL_ID AS HeaderId, h.SOL_CARDCODE AS CardCode, h.SOL_CARDNAME AS CardName,
+                               h.SOL_DOCDATE AS DocDate, h.SOL_DOCDUEDATE AS DocDueDate, h.SOL_TAXDATE AS TaxDate,
+                               h.SOL_REMARKS AS Remarks, h.SOL_WEB_TX_NUMBER AS WebTxNumber, h.SOL_WEB_TX_ID AS WebTxId,
+                               h.SOL_UDF_DATA AS HeaderUdfData,
+                               d.SOL_LINENUM AS LineNum, d.SOL_ITEMCODE AS ItemCode, d.SOL_ITEMNAME AS ItemName,
+                               d.SOL_WAREHOUSE AS Warehouse, d.SOL_QUANTITY AS Quantity, d.SOL_PRICE AS Price,
+                               d.SOL_VAT_GROUP AS VatGroup, d.SOL_WEB_LINE_ID AS WebLineId, d.SOL_UDF_DATA AS LineUdfData
+                        FROM SOL_GRE_HEADER h
+                        INNER JOIN SOL_GRE_DETAIL d ON d.SOL_HEADER_ID = h.SOL_ID
+                        WHERE (h.SOL_PROCESS_STATUS = 0 
+                               OR (h.SOL_PROCESS_STATUS = 2 AND h.SOL_RETRYCOUNT < 3 AND (
+                                   (h.SOL_RETRYCOUNT = 1 AND DATEDIFF(second, ISNULL(h.SOL_UPDATED_AT, h.SOL_CREATED_AT), GETDATE()) >= 30)
+                                   OR (h.SOL_RETRYCOUNT = 2 AND DATEDIFF(second, ISNULL(h.SOL_UPDATED_AT, h.SOL_CREATED_AT), GETDATE()) >= 120)
+                               )))
+                        ORDER BY h.SOL_ID, d.SOL_LINENUM";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        PendingPurchaseOrder current = null;
+                        long currentHeaderId = -1;
+
+                        while (reader.Read())
+                        {
+                            long headerId = Convert.ToInt64(reader["HeaderId"]);
+
+                            if (current == null || headerId != currentHeaderId)
+                            {
+                                current = new PendingPurchaseOrder
+                                {
+                                    HeaderId = headerId,
+                                    CardCode = reader["CardCode"]?.ToString() ?? "",
+                                    CardName = reader["CardName"]?.ToString() ?? "",
+                                    DocDate = Convert.IsDBNull(reader["DocDate"]) ? DateTime.Now : Convert.ToDateTime(reader["DocDate"]),
+                                    DocDueDate = Convert.IsDBNull(reader["DocDueDate"]) ? DateTime.Now.AddDays(7) : Convert.ToDateTime(reader["DocDueDate"]),
+                                    TaxDate = Convert.IsDBNull(reader["TaxDate"]) ? DateTime.Now : Convert.ToDateTime(reader["TaxDate"]),
+                                    Remarks = reader["Remarks"]?.ToString() ?? "",
+                                    WebTxNumber = Convert.IsDBNull(reader["WebTxNumber"]) ? null : reader["WebTxNumber"].ToString(),
+                                    WebTxId = Convert.IsDBNull(reader["WebTxId"]) ? (long?)null : Convert.ToInt64(reader["WebTxId"]),
+                                    UdfDataJson = Convert.IsDBNull(reader["HeaderUdfData"]) ? null : reader["HeaderUdfData"].ToString()
+                                };
+                                result.Add(current);
+                                currentHeaderId = headerId;
+                            }
+
+                            current.Lines.Add(new PendingPurchaseOrderLine
+                            {
+                                LineNum = Convert.IsDBNull(reader["LineNum"]) ? 0 : Convert.ToInt32(reader["LineNum"]),
+                                ItemCode = reader["ItemCode"]?.ToString() ?? "",
+                                ItemName = reader["ItemName"]?.ToString() ?? "",
+                                Warehouse = reader["Warehouse"]?.ToString() ?? "",
+                                Quantity = Convert.IsDBNull(reader["Quantity"]) ? 0 : Convert.ToDecimal(reader["Quantity"]),
+                                Price = Convert.IsDBNull(reader["Price"]) ? 0 : Convert.ToDecimal(reader["Price"]),
+                                VatGroup = Convert.IsDBNull(reader["VatGroup"]) ? null : reader["VatGroup"].ToString(),
+                                WebLineId = Convert.IsDBNull(reader["WebLineId"]) ? (long?)null : Convert.ToInt64(reader["WebLineId"]),
+                                UdfDataJson = Convert.IsDBNull(reader["LineUdfData"]) ? null : reader["LineUdfData"].ToString()
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Gagal memuat Goods Return pending dari staging.", ex);
+            }
+
+            return result;
+        }
+
+        public void UpdateGoodsReturnStatus(long headerId, int processStatus, string errorMessage = null, string docEntry = null)
+        {
+            if (string.IsNullOrEmpty(_connectionString)) return;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    string query = @"
+                        UPDATE SOL_GRE_HEADER
+                        SET SOL_PROCESS_STATUS = CASE 
+                                WHEN @Status = 1 THEN 1 
+                                WHEN @Status = 2 AND (SOL_RETRYCOUNT + 1) >= @MaxRetry THEN 3 
+                                ELSE @Status 
+                            END,
+                            SOL_ERRORMESSAGE = CASE 
+                                WHEN @Status = 2 AND (SOL_RETRYCOUNT + 1) >= @MaxRetry THEN '[DEAD-LETTER] ' + ISNULL(@ErrMsg, 'Max retry limit reached')
+                                ELSE @ErrMsg 
+                            END,
+                            SOL_DOCENTRY = CASE WHEN @DocEntry IS NOT NULL THEN @DocEntry ELSE SOL_DOCENTRY END,
+                            SOL_RETRYCOUNT = CASE WHEN @Status = 1 THEN 0 ELSE SOL_RETRYCOUNT + 1 END,
+                            SOL_PROCESSED_AT = GETDATE(),
+                            SOL_UPDATED_AT = GETDATE()
+                        WHERE SOL_ID = @HeaderId;
+
+                        UPDATE SOL_GRE_DETAIL
+                        SET SOL_PROCESS_STATUS = CASE 
+                                WHEN @Status = 1 THEN 1 
+                                WHEN @Status = 2 AND (SELECT SOL_RETRYCOUNT FROM SOL_GRE_HEADER WHERE SOL_ID = @HeaderId) >= @MaxRetry THEN 3 
+                                ELSE @Status 
+                            END
+                        WHERE SOL_HEADER_ID = @HeaderId;";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@HeaderId", headerId);
+                        cmd.Parameters.AddWithValue("@Status", processStatus);
+                        cmd.Parameters.AddWithValue("@MaxRetry", _maxRetryCount > 0 ? _maxRetryCount : 3);
+                        cmd.Parameters.AddWithValue("@ErrMsg", (object)errorMessage ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@DocEntry", (object)docEntry ?? DBNull.Value);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("DB Update Goods Return Status Error: " + ex.Message);
+            }
+        }
+
+        public bool IsGoodsReturnRetryLimitExceeded(long headerId)
+        {
+            if (string.IsNullOrEmpty(_connectionString)) return false;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string query = @"SELECT SOL_RETRYCOUNT FROM SOL_GRE_HEADER WHERE SOL_ID = @HeaderId";
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@HeaderId", headerId);
+                        object result = cmd.ExecuteScalar();
+                        if (result == null || result == DBNull.Value) return false;
+                        return Convert.ToInt32(result) >= _maxRetryCount;
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public void MarkGoodsReturnAsExceededRetryLimit(long headerId)
+        {
+            if (string.IsNullOrEmpty(_connectionString)) return;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string query = @"
+                        UPDATE SOL_GRE_HEADER
+                        SET SOL_PROCESS_STATUS = 3,
+                            SOL_ERRORMESSAGE = 'Max retry limit exceeded',
+                            SOL_UPDATED_AT = GETDATE()
+                        WHERE SOL_ID = @HeaderId";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@HeaderId", headerId);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("DB MarkGoodsReturnExceeded Error: " + ex.Message);
+            }
+        }
+
+        /// <summary>
         /// Mengambil Stock Transfer pending dari tabel staging (SOL_PROCESS_STATUS = 0).
         /// </summary>
         public List<PendingPurchaseOrder> LoadPendingStockTransfers()
@@ -1003,6 +1193,61 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     {
                         Console.WriteLine("LoadDocumentHeaderLogs Stock Transfer Error: " + exTransfer.Message);
                     }
+
+                    // Query Goods Return
+                    try
+                    {
+                        string queryGRE = @"
+                            SELECT SOL_ID AS HeaderId, 'Goods Return' AS DocType,
+                                   ISNULL(SOL_WEB_TX_NUMBER, '') AS WebTxNumber,
+                                   ISNULL(SOL_CARDCODE, '') AS CardCode,
+                                   ISNULL(SOL_CARDNAME, '') AS CardName,
+                                   SOL_DOCDATE AS DocDate,
+                                   SOL_DOCDUEDATE AS DocDueDate,
+                                   SOL_PROCESS_STATUS AS ProcessStatus,
+                                   ISNULL(SOL_DOCENTRY, '') AS DocEntry,
+                                   SOL_PROCESSED_AT AS ProcessedAt,
+                                   SOL_CREATED_AT AS CreatedAt,
+                                   ISNULL(SOL_REMARKS, '') AS Remarks,
+                                   ISNULL(SOL_ERRORMESSAGE, '') AS ErrorMessage,
+                                   SOL_UDF_DATA AS UdfDataJson
+                            FROM SOL_GRE_HEADER";
+
+                        using (SqlCommand cmd = new SqlCommand(queryGRE, conn))
+                        using (SqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                int statusVal = Convert.IsDBNull(reader["ProcessStatus"]) ? 0 : Convert.ToInt32(reader["ProcessStatus"]);
+                                string statusStr = "Pending";
+                                if (statusVal == 1) statusStr = "Success";
+                                else if (statusVal == 2) statusStr = "Failed";
+                                else if (statusVal == 3) statusStr = "Cancelled";
+
+                                list.Add(new DocumentHeaderLogModel
+                                {
+                                    HeaderId = Convert.ToInt64(reader["HeaderId"]),
+                                    DocType = reader["DocType"].ToString(),
+                                    WebTxNumber = reader["WebTxNumber"].ToString(),
+                                    CardCode = reader["CardCode"].ToString(),
+                                    CardName = reader["CardName"].ToString(),
+                                    DocDate = Convert.IsDBNull(reader["DocDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDate"]),
+                                    DocDueDate = Convert.IsDBNull(reader["DocDueDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDueDate"]),
+                                    Status = statusStr,
+                                    DocEntry = reader["DocEntry"].ToString(),
+                                    ProcessedAt = Convert.IsDBNull(reader["ProcessedAt"]) ? (DateTime?)null : Convert.ToDateTime(reader["ProcessedAt"]),
+                                    CreatedAt = Convert.IsDBNull(reader["CreatedAt"]) ? DateTime.MinValue : Convert.ToDateTime(reader["CreatedAt"]),
+                                    Remarks = reader["Remarks"].ToString(),
+                                    ErrorMessage = reader["ErrorMessage"].ToString(),
+                                    UdfDataJson = Convert.IsDBNull(reader["UdfDataJson"]) ? null : reader["UdfDataJson"].ToString()
+                                });
+                            }
+                        }
+                    }
+                    catch (Exception exGRE)
+                    {
+                        Console.WriteLine("LoadDocumentHeaderLogs Goods Return Error: " + exGRE.Message);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1207,11 +1452,75 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             return lines;
         }
 
+        public List<DocumentDetailLineModel> LoadGoodsReturnLineDetails(long headerId)
+        {
+            var lines = new List<DocumentDetailLineModel>();
+            if (string.IsNullOrEmpty(_connectionString)) return lines;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string query = @"
+                        SELECT SOL_LINENUM AS LineNum,
+                               ISNULL(SOL_ITEMCODE, '') AS ItemCode,
+                               ISNULL(SOL_ITEMNAME, '') AS ItemName,
+                               ISNULL(SOL_WAREHOUSE, '') AS Warehouse,
+                               ISNULL(SOL_QUANTITY, 0) AS Quantity,
+                               ISNULL(SOL_PRICE, 0) AS Price,
+                               ISNULL(SOL_VAT_GROUP, '') AS VatGroup,
+                               SOL_PROCESS_STATUS AS ProcessStatus,
+                               ISNULL(SOL_ERRORMESSAGE, '') AS ErrorMessage,
+                               SOL_UDF_DATA AS UdfDataJson
+                        FROM SOL_GRE_DETAIL
+                        WHERE SOL_HEADER_ID = @HeaderId
+                        ORDER BY SOL_LINENUM";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@HeaderId", headerId);
+                        using (SqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                int statusVal = Convert.IsDBNull(reader["ProcessStatus"]) ? 0 : Convert.ToInt32(reader["ProcessStatus"]);
+                                string statusStr = "Pending";
+                                if (statusVal == 1) statusStr = "Success";
+                                else if (statusVal == 2) statusStr = "Failed";
+                                else if (statusVal == 3) statusStr = "Cancelled";
+
+                                lines.Add(new DocumentDetailLineModel
+                                {
+                                    LineNum = Convert.ToInt32(reader["LineNum"]),
+                                    ItemCode = reader["ItemCode"].ToString(),
+                                    ItemName = reader["ItemName"].ToString(),
+                                    Warehouse = reader["Warehouse"].ToString(),
+                                    Quantity = Convert.ToDecimal(reader["Quantity"]),
+                                    Price = Convert.ToDecimal(reader["Price"]),
+                                    VatGroup = reader["VatGroup"].ToString(),
+                                    Status = statusStr,
+                                    ErrorMessage = reader["ErrorMessage"].ToString(),
+                                    UdfDataJson = Convert.IsDBNull(reader["UdfDataJson"]) ? null : reader["UdfDataJson"].ToString()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("LoadGoodsReturnLineDetails Error: " + ex.Message);
+            }
+
+            return lines;
+        }
+
         /// <summary>
         /// Mengambil antrean dokumen yang belum tersinkronisasi ke SAP (Pending = 0 atau Failed = 2).
-        /// Filter modul aktif berdasarkan checkbox pada tab pertama (PO / GRPO / Transfer / SL).
+        /// Filter modul aktif berdasarkan checkbox pada tab pertama (PO / GRPO / Transfer / SL / GRE).
         /// </summary>
-        public List<PendingQueueDocModel> LoadUnsyncedDocuments(bool includePO, bool includeGRPO, bool includeTransfer, bool includeSL)
+        public List<PendingQueueDocModel> LoadUnsyncedDocuments(bool includePO, bool includeGRPO, bool includeTransfer, bool includeSL, bool includeGRE = true)
         {
             var list = new List<PendingQueueDocModel>();
             if (string.IsNullOrEmpty(_connectionString)) return list;
@@ -1381,6 +1690,60 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                         catch (Exception exTransfer)
                         {
                             Console.WriteLine("LoadUnsyncedDocuments Stock Transfer Error: " + exTransfer.Message);
+                        }
+                    }
+
+                    // 4. Goods Return (SOL_GRE_HEADER)
+                    if (includeGRE)
+                    {
+                        try
+                        {
+                            string queryGRE = @"
+                                SELECT SOL_ID AS HeaderId, 'Goods Return' AS DocType,
+                                       ISNULL(SOL_WEB_TX_NUMBER, '') AS WebTxNumber,
+                                       ISNULL(SOL_CARDCODE, '') AS CardCode,
+                                       ISNULL(SOL_CARDNAME, '') AS CardName,
+                                       SOL_DOCDATE AS DocDate,
+                                       SOL_DOCDUEDATE AS DocDueDate,
+                                       SOL_PROCESS_STATUS AS ProcessStatus,
+                                       SOL_CREATED_AT AS CreatedAt,
+                                       ISNULL(SOL_REMARKS, '') AS Remarks,
+                                       ISNULL(SOL_ERRORMESSAGE, '') AS ErrorMessage,
+                                       SOL_UDF_DATA AS UdfDataJson
+                                FROM SOL_GRE_HEADER
+                                WHERE SOL_PROCESS_STATUS IN (0, 2)";
+
+                            using (SqlCommand cmd = new SqlCommand(queryGRE, conn))
+                            using (SqlDataReader reader = cmd.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    int statusVal = Convert.IsDBNull(reader["ProcessStatus"]) ? 0 : Convert.ToInt32(reader["ProcessStatus"]);
+                                    string statusStr = statusVal == 0 ? "Pending" : "Failed";
+
+                                    list.Add(new PendingQueueDocModel
+                                    {
+                                        IsSelected = true,
+                                        HeaderId = Convert.ToInt64(reader["HeaderId"]),
+                                        DocType = reader["DocType"].ToString(),
+                                        WebTxNumber = reader["WebTxNumber"].ToString(),
+                                        CardCode = reader["CardCode"].ToString(),
+                                        CardName = reader["CardName"].ToString(),
+                                        DocDate = Convert.IsDBNull(reader["DocDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDate"]),
+                                        DocDueDate = Convert.IsDBNull(reader["DocDueDate"]) ? DateTime.MinValue : Convert.ToDateTime(reader["DocDueDate"]),
+                                        ProcessStatus = statusVal,
+                                        Status = statusStr,
+                                        CreatedAt = Convert.IsDBNull(reader["CreatedAt"]) ? DateTime.MinValue : Convert.ToDateTime(reader["CreatedAt"]),
+                                        Remarks = reader["Remarks"].ToString(),
+                                        ErrorMessage = reader["ErrorMessage"].ToString(),
+                                        UdfDataJson = Convert.IsDBNull(reader["UdfDataJson"]) ? null : reader["UdfDataJson"].ToString()
+                                    });
+                                }
+                            }
+                        }
+                        catch (Exception exGRE)
+                        {
+                            Console.WriteLine("LoadUnsyncedDocuments Goods Return Error: " + exGRE.Message);
                         }
                     }
                 }
@@ -1638,6 +2001,87 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             return result;
         }
 
+        public List<PendingPurchaseOrder> LoadPendingGoodsReturnsByIds(IEnumerable<long> headerIds)
+        {
+            var result = new List<PendingPurchaseOrder>();
+            if (string.IsNullOrEmpty(_connectionString) || headerIds == null) return result;
+
+            var idList = new List<long>(headerIds);
+            if (idList.Count == 0) return result;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string idsJoined = string.Join(",", idList);
+
+                    string query = $@"
+                        SELECT h.SOL_ID AS HeaderId, h.SOL_CARDCODE AS CardCode, h.SOL_CARDNAME AS CardName,
+                               h.SOL_DOCDATE AS DocDate, h.SOL_DOCDUEDATE AS DocDueDate, h.SOL_TAXDATE AS TaxDate,
+                               h.SOL_REMARKS AS Remarks, h.SOL_WEB_TX_NUMBER AS WebTxNumber, h.SOL_WEB_TX_ID AS WebTxId,
+                               h.SOL_UDF_DATA AS HeaderUdfData,
+                               d.SOL_LINENUM AS LineNum, d.SOL_ITEMCODE AS ItemCode, d.SOL_ITEMNAME AS ItemName,
+                               d.SOL_WAREHOUSE AS Warehouse, d.SOL_QUANTITY AS Quantity, d.SOL_PRICE AS Price,
+                               d.SOL_VAT_GROUP AS VatGroup, d.SOL_WEB_LINE_ID AS WebLineId, d.SOL_UDF_DATA AS LineUdfData
+                        FROM SOL_GRE_HEADER h
+                        INNER JOIN SOL_GRE_DETAIL d ON d.SOL_HEADER_ID = h.SOL_ID
+                        WHERE h.SOL_ID IN ({idsJoined}) AND h.SOL_PROCESS_STATUS IN (0, 2)
+                        ORDER BY h.SOL_ID, d.SOL_LINENUM";
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        PendingPurchaseOrder current = null;
+                        long currentHeaderId = -1;
+
+                        while (reader.Read())
+                        {
+                            long headerId = Convert.ToInt64(reader["HeaderId"]);
+
+                            if (current == null || headerId != currentHeaderId)
+                            {
+                                current = new PendingPurchaseOrder
+                                {
+                                    HeaderId = headerId,
+                                    CardCode = reader["CardCode"]?.ToString() ?? "",
+                                    CardName = reader["CardName"]?.ToString() ?? "",
+                                    DocDate = Convert.IsDBNull(reader["DocDate"]) ? DateTime.Now : Convert.ToDateTime(reader["DocDate"]),
+                                    DocDueDate = Convert.IsDBNull(reader["DocDueDate"]) ? DateTime.Now.AddDays(7) : Convert.ToDateTime(reader["DocDueDate"]),
+                                    TaxDate = Convert.IsDBNull(reader["TaxDate"]) ? DateTime.Now : Convert.ToDateTime(reader["TaxDate"]),
+                                    Remarks = reader["Remarks"]?.ToString() ?? "",
+                                    WebTxNumber = Convert.IsDBNull(reader["WebTxNumber"]) ? null : reader["WebTxNumber"].ToString(),
+                                    WebTxId = Convert.IsDBNull(reader["WebTxId"]) ? (long?)null : Convert.ToInt64(reader["WebTxId"]),
+                                    UdfDataJson = Convert.IsDBNull(reader["HeaderUdfData"]) ? null : reader["HeaderUdfData"].ToString()
+                                };
+                                result.Add(current);
+                                currentHeaderId = headerId;
+                            }
+
+                            current.Lines.Add(new PendingPurchaseOrderLine
+                            {
+                                LineNum = Convert.IsDBNull(reader["LineNum"]) ? 0 : Convert.ToInt32(reader["LineNum"]),
+                                ItemCode = reader["ItemCode"]?.ToString() ?? "",
+                                ItemName = reader["ItemName"]?.ToString() ?? "",
+                                Warehouse = reader["Warehouse"]?.ToString() ?? "",
+                                Quantity = Convert.IsDBNull(reader["Quantity"]) ? 0 : Convert.ToDecimal(reader["Quantity"]),
+                                Price = Convert.IsDBNull(reader["Price"]) ? 0 : Convert.ToDecimal(reader["Price"]),
+                                VatGroup = Convert.IsDBNull(reader["VatGroup"]) ? null : reader["VatGroup"].ToString(),
+                                WebLineId = Convert.IsDBNull(reader["WebLineId"]) ? (long?)null : Convert.ToInt64(reader["WebLineId"]),
+                                UdfDataJson = Convert.IsDBNull(reader["LineUdfData"]) ? null : reader["LineUdfData"].ToString()
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Gagal memuat Goods Return terpilih dari staging.", ex);
+            }
+
+            return result;
+        }
+
         #region DEBUG & MAINTENANCE
         public class TransactionSummary
         {
@@ -1647,12 +2091,14 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             public int GoodsReceiptPODetailCount { get; set; }
             public int StockTransferHeaderCount { get; set; }
             public int StockTransferDetailCount { get; set; }
+            public int GoodsReturnHeaderCount { get; set; }
+            public int GoodsReturnDetailCount { get; set; }
             public int SyncHistoryCount { get; set; }
             public int SyncErrorCount { get; set; }
 
             public int TotalTransactions
             {
-                get { return PurchaseOrderHeaderCount + GoodsReceiptPOHeaderCount + StockTransferHeaderCount; }
+                get { return PurchaseOrderHeaderCount + GoodsReceiptPOHeaderCount + StockTransferHeaderCount + GoodsReturnHeaderCount; }
             }
 
             public int TotalRecords
@@ -1662,6 +2108,7 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     return PurchaseOrderHeaderCount + PurchaseOrderDetailCount +
                            GoodsReceiptPOHeaderCount + GoodsReceiptPODetailCount +
                            StockTransferHeaderCount + StockTransferDetailCount +
+                           GoodsReturnHeaderCount + GoodsReturnDetailCount +
                            SyncHistoryCount + SyncErrorCount;
                 }
             }
@@ -1686,6 +2133,8 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                             CASE WHEN OBJECT_ID('SOL_GRPO_DETAIL', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM SOL_GRPO_DETAIL) ELSE 0 END AS GRPO_D,
                             CASE WHEN OBJECT_ID('SOL_STOCK_TRANSFER_HEADER', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM SOL_STOCK_TRANSFER_HEADER) ELSE 0 END AS ST_H,
                             CASE WHEN OBJECT_ID('SOL_STOCK_TRANSFER_DETAIL', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM SOL_STOCK_TRANSFER_DETAIL) ELSE 0 END AS ST_D,
+                            CASE WHEN OBJECT_ID('SOL_GRE_HEADER', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM SOL_GRE_HEADER) ELSE 0 END AS GRE_H,
+                            CASE WHEN OBJECT_ID('SOL_GRE_DETAIL', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM SOL_GRE_DETAIL) ELSE 0 END AS GRE_D,
                             CASE WHEN OBJECT_ID('TBL_SYNC_HISTORY', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM TBL_SYNC_HISTORY) ELSE 0 END AS SYNC_H,
                             CASE WHEN OBJECT_ID('TBL_SYNC_ERROR', 'U') IS NOT NULL THEN (SELECT COUNT(*) FROM TBL_SYNC_ERROR) ELSE 0 END AS SYNC_E";
 
@@ -1700,6 +2149,8 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                             summary.GoodsReceiptPODetailCount = Convert.ToInt32(reader["GRPO_D"]);
                             summary.StockTransferHeaderCount = Convert.ToInt32(reader["ST_H"]);
                             summary.StockTransferDetailCount = Convert.ToInt32(reader["ST_D"]);
+                            summary.GoodsReturnHeaderCount = Convert.ToInt32(reader["GRE_H"]);
+                            summary.GoodsReturnDetailCount = Convert.ToInt32(reader["GRE_D"]);
                             summary.SyncHistoryCount = Convert.ToInt32(reader["SYNC_H"]);
                             summary.SyncErrorCount = Convert.ToInt32(reader["SYNC_E"]);
                         }
@@ -1771,6 +2222,18 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                             BEGIN TRY DBCC CHECKIDENT('SOL_STOCK_TRANSFER_HEADER', RESEED, 0); END TRY BEGIN CATCH END CATCH;
                         END
 
+                        IF OBJECT_ID('SOL_GRE_DETAIL', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM SOL_GRE_DETAIL;
+                            BEGIN TRY DBCC CHECKIDENT('SOL_GRE_DETAIL', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END
+
+                        IF OBJECT_ID('SOL_GRE_HEADER', 'U') IS NOT NULL
+                        BEGIN
+                            DELETE FROM SOL_GRE_HEADER;
+                            BEGIN TRY DBCC CHECKIDENT('SOL_GRE_HEADER', RESEED, 0); END TRY BEGIN CATCH END CATCH;
+                        END
+
                         IF OBJECT_ID('TBL_SYNC_HISTORY', 'U') IS NOT NULL
                         BEGIN
                             DELETE FROM TBL_SYNC_HISTORY;
@@ -1838,6 +2301,14 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                                 DELETE FROM SOL_STOCK_TRANSFER_DETAIL WHERE SOL_HEADER_ID = @HeaderId;
                             IF OBJECT_ID('SOL_STOCK_TRANSFER_HEADER', 'U') IS NOT NULL
                                 DELETE FROM SOL_STOCK_TRANSFER_HEADER WHERE SOL_ID = @HeaderId;";
+                    }
+                    else if (string.Equals(docType, "Goods Return", StringComparison.OrdinalIgnoreCase) || string.Equals(docType, "GRE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sql = @"
+                            IF OBJECT_ID('SOL_GRE_DETAIL', 'U') IS NOT NULL
+                                DELETE FROM SOL_GRE_DETAIL WHERE SOL_HEADER_ID = @HeaderId;
+                            IF OBJECT_ID('SOL_GRE_HEADER', 'U') IS NOT NULL
+                                DELETE FROM SOL_GRE_HEADER WHERE SOL_ID = @HeaderId;";
                     }
                     else
                     {
@@ -1962,6 +2433,28 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                             totalRequeued += cmd.ExecuteNonQuery();
                         }
                     }
+
+                    if (doAll || dt.Contains("return") || dt.Contains("gre"))
+                    {
+                        string qReturn = @"
+                            UPDATE SOL_GRE_HEADER
+                            SET SOL_PROCESS_STATUS = 0,
+                                SOL_RETRYCOUNT = 0,
+                                SOL_ERRORMESSAGE = NULL,
+                                SOL_UPDATED_AT = GETDATE()
+                            WHERE SOL_PROCESS_STATUS = 3;
+
+                            UPDATE d
+                            SET d.SOL_PROCESS_STATUS = 0,
+                                d.SOL_UPDATED_AT = GETDATE()
+                            FROM SOL_GRE_DETAIL d
+                            INNER JOIN SOL_GRE_HEADER h ON h.SOL_ID = d.SOL_HEADER_ID
+                            WHERE h.SOL_PROCESS_STATUS = 0;";
+                        using (SqlCommand cmd = new SqlCommand(qReturn, conn))
+                        {
+                            totalRequeued += cmd.ExecuteNonQuery();
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -1982,7 +2475,8 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
             string tableName = "SOL_PURCHASE_ORDER_HEADER";
             string type = (docType ?? "").ToLower();
-            if (type.Contains("grpo") || type.Contains("goods")) tableName = "SOL_GRPO_HEADER";
+            if (type.Contains("grpo") || type.Contains("goods receipt") || type.Contains("delivery")) tableName = "SOL_GRPO_HEADER";
+            else if (type.Contains("return") || type.Contains("gre")) tableName = "SOL_GRE_HEADER";
             else if (type.Contains("transfer") || type.Contains("stock")) tableName = "SOL_STOCK_TRANSFER_HEADER";
 
             try
@@ -2031,7 +2525,8 @@ namespace SOLTIUS_Scheduler_Add_On.Services
 
             string tableName = "SOL_PURCHASE_ORDER_HEADER";
             string type = (docType ?? "").ToLower();
-            if (type.Contains("grpo") || type.Contains("goods")) tableName = "SOL_GRPO_HEADER";
+            if (type.Contains("grpo") || type.Contains("goods receipt") || type.Contains("delivery")) tableName = "SOL_GRPO_HEADER";
+            else if (type.Contains("return") || type.Contains("gre")) tableName = "SOL_GRE_HEADER";
             else if (type.Contains("transfer") || type.Contains("stock")) tableName = "SOL_STOCK_TRANSFER_HEADER";
 
             try
@@ -2057,6 +2552,37 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             {
                 Console.WriteLine("DB MarkDocumentAsReconciled Error: " + ex.Message);
             }
+        }
+
+        public string ResolveVendorCardCode(string webCardCode)
+        {
+            if (string.IsNullOrWhiteSpace(webCardCode)) return webCardCode;
+            if (string.IsNullOrEmpty(_connectionString)) return webCardCode;
+
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string query = "SELECT TOP 1 SapCardCode FROM TBL_VENDOR_MAPPING WHERE WebCardCode = @WebCardCode;";
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@WebCardCode", webCardCode.Trim());
+                        object result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                        {
+                            string mapped = result.ToString().Trim();
+                            if (!string.IsNullOrEmpty(mapped)) return mapped;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("ResolveVendorCardCode Error: " + ex.Message);
+            }
+
+            return webCardCode;
         }
         #endregion
     }

@@ -30,6 +30,9 @@ namespace SOLTIUS_Scheduler_Add_On.Model
         /// <summary>Jalankan sinkronisasi Stock Transfer (OWTR).</summary>
         public bool SyncStockTransfer { get; set; } = true;
 
+        /// <summary>Jalankan sinkronisasi Goods Return (ORPD).</summary>
+        public bool SyncGoodsReturn { get; set; } = true;
+
         /// <summary>Jalankan sinkronisasi Service Layer. (Belum diimplementasi di engine.)</summary>
         public bool SyncServiceLayer { get; set; } = false;
 

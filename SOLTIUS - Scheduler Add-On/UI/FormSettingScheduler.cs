@@ -22,6 +22,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private CheckBox chkPO;
         private CheckBox chkGRPO;
         private CheckBox chkTransfer;
+        private CheckBox chkGRE;
         private CheckBox chkSL;
         private TextBox txtServiceName;
         private Label lblServiceStatus;
@@ -34,6 +35,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
         private Button btnStopService;
         private Button btnRefreshStatus;
         private Button btnRunNow;
+        private Button btnToggleEngine;
         private System.Windows.Forms.Timer statusTimer;
 
         private SchedulerConfig _config;
@@ -41,7 +43,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
 
         public FormSettingScheduler()
         {
-            _engine = new SyncSchedulerEngine();
+            _engine = SyncSchedulerEngine.Instance;
             _config = SchedulerConfig.Load();
             BuildUI();
             LoadConfigToUI();
@@ -57,7 +59,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.ClientSize = new Size(520, 650);
+            this.ClientSize = new Size(520, 680);
 
             // ===== Judul =====
             var lblTitle = new Label
@@ -99,23 +101,25 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             rbInterval.CheckedChanged += (s, e) => UpdateNumericEnable();
 
             // ===== Group: Fungsi =====
-            var grpFunc = new GroupBox { Text = "Fungsi", Location = new Point(24, 200), Size = new Size(472, 140) };
+            var grpFunc = new GroupBox { Text = "Fungsi", Location = new Point(24, 200), Size = new Size(472, 160) };
             UITheme.ApplyGroup(grpFunc);
 
             chkPO = new CheckBox { Text = "Sync Purchase Order (OPOR)", Location = new Point(16, 25), AutoSize = true, Checked = true };
             chkGRPO = new CheckBox { Text = "Sync Goods Receipt PO (OPDN)", Location = new Point(16, 52), AutoSize = true, Checked = true };
             chkTransfer = new CheckBox { Text = "Sync Stock Transfer (OWTR)", Location = new Point(16, 79), AutoSize = true, Checked = true };
-            chkSL = new CheckBox { Text = "Sync Service Layer (OSL) — belum diimplementasikan", Location = new Point(16, 106), AutoSize = true, Enabled = false };
+            chkGRE = new CheckBox { Text = "Sync Goods Return (ORPD)", Location = new Point(16, 106), AutoSize = true, Checked = true };
+            chkSL = new CheckBox { Text = "Sync Service Layer (OSL) — belum diimplementasikan", Location = new Point(16, 133), AutoSize = true, Enabled = false };
 
             UITheme.ApplyCheck(chkPO);
             UITheme.ApplyCheck(chkGRPO);
             UITheme.ApplyCheck(chkTransfer);
+            UITheme.ApplyCheck(chkGRE);
             UITheme.ApplyCheck(chkSL);
 
-            grpFunc.Controls.AddRange(new Control[] { chkPO, chkGRPO, chkTransfer, chkSL });
+            grpFunc.Controls.AddRange(new Control[] { chkPO, chkGRPO, chkTransfer, chkGRE, chkSL });
 
             // ===== Group: Windows Service =====
-            var grpSvc = new GroupBox { Text = "Windows Service", Location = new Point(24, 350), Size = new Size(472, 190) };
+            var grpSvc = new GroupBox { Text = "Windows Service", Location = new Point(24, 370), Size = new Size(472, 190) };
             UITheme.ApplyGroup(grpSvc);
 
             var lblSvcName = new Label { Text = "Nama Service", AutoSize = true, Location = new Point(16, 32) };
@@ -145,25 +149,28 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             });
 
             // ===== Status engine + aksi =====
-            lblEngineStatus = new Label { Text = "Engine: idle", Location = new Point(24, 550), AutoSize = true };
-            lblLastRun = new Label { Text = "", Location = new Point(24, 570), AutoSize = true };
+            lblEngineStatus = new Label { Text = "Engine: idle", Location = new Point(24, 570), AutoSize = true };
+            lblLastRun = new Label { Text = "", Location = new Point(24, 590), AutoSize = true };
             UITheme.ApplyLabel(lblEngineStatus);
             UITheme.ApplyLabel(lblLastRun, muted: true);
 
-            btnRunNow = new Button { Text = "Run Now", Location = new Point(360, 546), Size = new Size(136, 30) };
-            btnSave = new Button { Text = "Simpan", Location = new Point(360, 584), Size = new Size(136, 30) };
+            btnToggleEngine = new Button { Text = "Start In-App Engine", Location = new Point(216, 570), Size = new Size(136, 30) };
+            btnRunNow = new Button { Text = "Run Now", Location = new Point(360, 570), Size = new Size(136, 30) };
+            btnSave = new Button { Text = "Simpan", Location = new Point(360, 610), Size = new Size(136, 30) };
+            UITheme.ApplyPrimary(btnToggleEngine);
             UITheme.ApplySecondary(btnRunNow);
             UITheme.ApplyPrimary(btnSave);
 
             this.Controls.AddRange(new Control[]
             {
                 lblTitle, grpMode, grpFunc, grpSvc,
-                lblEngineStatus, lblLastRun, btnRunNow, btnSave
+                lblEngineStatus, lblLastRun, btnToggleEngine, btnRunNow, btnSave
             });
 
             // ===== Events =====
             btnSave.Click += (s, e) => SaveConfig();
             btnRunNow.Click += (s, e) => RunNow();
+            btnToggleEngine.Click += (s, e) => ToggleEngine();
             btnInstallService.Click += (s, e) => InstallService();
             btnUninstall.Click += (s, e) => UninstallService();
             btnStartService.Click += (s, e) => ControlService(false);
@@ -196,6 +203,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             chkPO.Checked = _config.SyncPurchaseOrder;
             chkGRPO.Checked = _config.SyncGoodsReceiptPO;
             chkTransfer.Checked = _config.SyncStockTransfer;
+            chkGRE.Checked = _config.SyncGoodsReturn;
             chkSL.Checked = _config.SyncServiceLayer;
             txtServiceName.Text = string.IsNullOrWhiteSpace(_config.ServiceName) ? "SOLTIUSSchedulerService" : _config.ServiceName;
             UpdateNumericEnable();
@@ -210,6 +218,7 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             _config.SyncPurchaseOrder = chkPO.Checked;
             _config.SyncGoodsReceiptPO = chkGRPO.Checked;
             _config.SyncStockTransfer = chkTransfer.Checked;
+            _config.SyncGoodsReturn = chkGRE.Checked;
             _config.SyncServiceLayer = chkSL.Checked;
             _config.ServiceName = txtServiceName.Text.Trim();
             if (string.IsNullOrWhiteSpace(_config.ServiceName))
@@ -220,12 +229,19 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             }
             _config.Save();
 
+            // Jika engine sedang berjalan in-app, restart timer secara dinamis langsung dengan config baru
+            if (_engine.IsRunning)
+            {
+                _engine.RestartIfRunning(_config);
+            }
+
             string intervalDesc = _config.Mode == "Realtime"
                 ? $"setiap {_config.RealtimeSeconds} detik"
                 : $"setiap {_config.IntervalMinutes} menit";
-            MessageBox.Show($"Setting tersimpan.\n\nMode: {_config.Mode}\nInterval: {intervalDesc}\nPurchase Order: {(chkPO.Checked ? "Aktif" : "Nonaktif")}\nGoods Receipt PO: {(chkGRPO.Checked ? "Aktif" : "Nonaktif")}\nStock Transfer: {(chkTransfer.Checked ? "Aktif" : "Nonaktif")}\n\n" +
-                "Perubahan interval berlaku saat service di-restart (Stop → Start).",
+            MessageBox.Show($"Setting tersimpan dan diterapkan!\n\nMode: {_config.Mode}\nInterval: {intervalDesc}\nPurchase Order: {(chkPO.Checked ? "Aktif" : "Nonaktif")}\nGoods Receipt PO: {(chkGRPO.Checked ? "Aktif" : "Nonaktif")}\nStock Transfer: {(chkTransfer.Checked ? "Aktif" : "Nonaktif")}\nGoods Return: {(chkGRE.Checked ? "Aktif" : "Nonaktif")}\n\n" +
+                (_engine.IsRunning ? "In-App Engine timer telah diperbarui secara otomatis!" : "Perubahan interval service Windows berlaku saat service di-restart (Stop → Start)."),
                 "Setting Scheduler", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            RefreshEngineStatus();
         }
         #endregion
 
@@ -238,6 +254,37 @@ namespace SOLTIUS_Scheduler_Add_On.UI
             lblLastRun.Text = _engine.LastRunAtUtc == DateTime.MinValue
                 ? "Belum pernah jalan."
                 : $"Terakhir jalan: {_engine.LastRunAtUtc.ToLocalTime():HH:mm:ss} — dokumen gagal: {_engine.LastFailedCount}";
+
+            if (btnToggleEngine != null)
+            {
+                btnToggleEngine.Text = _engine.IsRunning ? "Stop In-App Engine" : "Start In-App Engine";
+                if (_engine.IsRunning) UITheme.ApplySecondary(btnToggleEngine);
+                else UITheme.ApplyPrimary(btnToggleEngine);
+            }
+        }
+
+        private void ToggleEngine()
+        {
+            try
+            {
+                if (_engine.IsRunning)
+                {
+                    _engine.Stop();
+                    MessageBox.Show("In-App Scheduler Engine telah dihentikan.", "Scheduler Engine", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    _config = SchedulerConfig.Load();
+                    _engine.Start(_config);
+                    MessageBox.Show($"In-App Scheduler Engine telah dimulai!\nMode: {_config.Mode}, Interval: {_config.ActiveIntervalSeconds} detik.",
+                        "Scheduler Engine", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                RefreshEngineStatus();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal mengubah status Scheduler Engine: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void RunNow()

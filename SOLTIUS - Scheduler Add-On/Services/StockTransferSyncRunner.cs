@@ -7,15 +7,11 @@ using System.Collections.Generic;
 namespace SOLTIUS_Scheduler_Add_On.Services
 {
     /// <summary>
-    /// Engine sinkronisasi Stock Transfer / Packing List (OWTR) dari staging ke SAP B1, tanpa ketergantungan UI.
-    /// Mengikuti alur logistik packing list maritim Web App IBT.
+    /// Engine sinkronisasi Stock Transfer / Packing List (OWTR - StockTransfers) dari staging ke SAP via Service Layer.
+    /// Mematuhi larangan DI API & direct SQL, serta validasi integritas gudang dan BPLID.
     /// </summary>
     public static class StockTransferSyncRunner
     {
-        /// <summary>
-        /// Menjalankan sinkronisasi semua Stock Transfer pending (SOL_PROCESS_STATUS = 0).
-        /// </summary>
-        /// <returns>Jumlah dokumen yang gagal.</returns>
         public static int RunPendingSync(AppConfig config, bool isDryRun)
         {
             if (config == null)
@@ -32,11 +28,8 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             if (orders.Count == 0) return 0;
 
             int failedCount = 0;
-            using (var sapService = new SapSyncService())
+            using (var slClient = isDryRun ? null : new SapServiceLayerClient(config))
             {
-                if (!isDryRun)
-                    sapService.ConnectToDIAPI(config);
-
                 foreach (var order in orders)
                 {
                     // Skip if retry limit exceeded
@@ -55,7 +48,63 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                         }
                         else
                         {
-                            string docEntry = sapService.ExecuteStockTransferSync(order);
+                            // 1. Determine from and to warehouses
+                            string fromWhs = order.Lines.Count > 0 && !string.IsNullOrEmpty(order.Lines[0].FromWarehouse)
+                                ? order.Lines[0].FromWarehouse
+                                : "WH-IBT";
+                            string toWhs = order.Lines.Count > 0 && !string.IsNullOrEmpty(order.Lines[0].Warehouse)
+                                ? order.Lines[0].Warehouse
+                                : "WH-IBT";
+
+                            int bplId = 3; // PT Indobaruna Bulk Transport
+                            SapServiceLayerClient.ValidateBranchAndWarehouse(bplId, fromWhs);
+                            SapServiceLayerClient.ValidateBranchAndWarehouse(bplId, toWhs);
+
+                            // 2. Build Service Layer payload
+                            var linesPayload = new List<object>();
+                            foreach (var line in order.Lines)
+                            {
+                                string lineFrom = !string.IsNullOrEmpty(line.FromWarehouse) ? line.FromWarehouse : fromWhs;
+                                string lineTo = !string.IsNullOrEmpty(line.Warehouse) ? line.Warehouse : toWhs;
+
+                                var lineObj = new Dictionary<string, object>
+                                {
+                                    { "ItemCode", line.ItemCode },
+                                    { "Quantity", (double)line.Quantity },
+                                    { "FromWarehouseCode", lineFrom },
+                                    { "WarehouseCode", lineTo }
+                                };
+                                if (line.WebLineId.HasValue)
+                                {
+                                    lineObj["U_SOL_WebLineId"] = line.WebLineId.Value.ToString();
+                                }
+                                linesPayload.Add(lineObj);
+                            }
+
+                            var transferPayload = new Dictionary<string, object>
+                            {
+                                { "DocDate", order.DocDate.ToString("yyyy-MM-dd") },
+                                { "DueDate", (order.DocDueDate == DateTime.MinValue ? DateTime.Now : order.DocDueDate).ToString("yyyy-MM-dd") },
+                                { "TaxDate", order.TaxDate.ToString("yyyy-MM-dd") },
+                                { "FromWarehouse", fromWhs },
+                                { "ToWarehouse", toWhs },
+                                { "BPLID", bplId },
+                                { "Comments", string.IsNullOrWhiteSpace(order.Remarks) ? $"Stock Transfer Sync via SOLTIUS Scheduler ({order.WebTxNumber})" : order.Remarks },
+                                { "StockTransferLines", linesPayload }
+                            };
+
+                            if (!string.IsNullOrEmpty(order.WebTxNumber))
+                            {
+                                transferPayload["U_SOL_WebTxNumber"] = order.WebTxNumber;
+                            }
+                            if (order.WebTxId.HasValue)
+                            {
+                                transferPayload["U_SOL_WebTxId"] = order.WebTxId.Value.ToString();
+                            }
+
+                            // 3. POST to Service Layer
+                            string docEntry = slClient.PostDocument("StockTransfers", transferPayload);
+
                             LogSync(dbService, order, "Success", docEntry, "-");
                             dbService.UpdateStockTransferStatus(order.HeaderId, 1, null, docEntry);
 
@@ -114,7 +163,7 @@ namespace SOLTIUS_Scheduler_Add_On.Services
                     Price = order.Lines.Count > 0 ? (double)order.Lines[0].Price : 0,
                     WarehouseCode = order.Lines.Count > 0 ? order.Lines[0].Warehouse : "",
                     Status = status,
-                    ErrorSource = status == "Failed" ? "SAP Validation" : "-",
+                    ErrorSource = status == "Failed" ? "SAP Service Layer" : "-",
                     ErrorMessage = errorMessage ?? "-",
                     CreatedAt = DateTime.Now
                 };
@@ -124,7 +173,6 @@ namespace SOLTIUS_Scheduler_Add_On.Services
             }
             catch
             {
-                // Logging failure must not kill the sync
             }
         }
     }
